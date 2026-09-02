@@ -64,21 +64,23 @@ pub struct CaptureResult {
 
 /// Captures the current screen, optimizes it for a vision model, and returns
 /// the base64-encoded JPEG. Permission is checked up front so the user gets an
-/// actionable message instead of a silent black frame.
+/// actionable message instead of a silently wallpaper-only frame (which is what
+/// CoreGraphics returns when Screen Recording is not yet granted).
 #[tauri::command]
 pub fn capture_screen() -> Result<CaptureResult, String> {
     #[cfg(target_os = "macos")]
     {
-        // Best-effort kick of the TCC prompt on first run; a false preflight
-        // is NOT a hard error here (see ensure_screen_capture_permission).
-        ensure_screen_capture_permission();
+        // 硬性前置检查：没有屏幕录制权限就直接报错，绝不静默返回壁纸。
+        // CGDisplayCreateImage 在无权限时不会返回 None，而是返回一张只有壁纸、
+        // 没有窗口内容的图——这就是「截到壁纸」的真正根因，必须在它之前拦截。
+        ensure_screen_capture_permission()?;
 
         let image = capture_fullscreen_image()?;
         let width = image.width();
         let height = image.height();
         if width == 0 || height == 0 {
             return Err(
-                "未能截取屏幕：CGWindowListCreateImage 返回空图像。\
+                "未能截取屏幕：CGDisplayCreateImage 返回空图像。\
                  请确认「系统设置 → 隐私与安全性 → 录屏与系统录音」已勾选 Meetly，\
                  然后 **完全退出并重新打开 Meetly**（macOS 的 TCC 缓存在进程退出前不会刷新）。"
                     .to_string(),
@@ -182,28 +184,34 @@ fn strip_data_url_prefix(value: &str) -> &str {
 fn image_base64_unused_marker() {}
 
 #[cfg(target_os = "macos")]
-fn ensure_screen_capture_permission() {
-    // Note: CGPreflightScreenCaptureAccess() caches the TCC decision per-process.
-    // Even after the user toggles "Screen Recording" on in System Settings, this
-    // call can still return false until *this* process is restarted. So we
-    // deliberately do *not* treat `preflight == false` as a hard error here —
-    // we just kick off CGRequestScreenCaptureAccess so macOS shows the prompt
-    // on first run, then let the actual capture call below report the truth.
+fn ensure_screen_capture_permission() -> Result<(), String> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     extern "C" {
         fn CGPreflightScreenCaptureAccess() -> bool;
         fn CGRequestScreenCaptureAccess() -> bool;
     }
 
     if unsafe { CGPreflightScreenCaptureAccess() } {
-        return;
+        return Ok(());
     }
 
-    let granted = unsafe { CGRequestScreenCaptureAccess() };
-    let _ = crate::debug_log::append(&format!(
-        "[screen-capture] screen recording permission requested granted={granted} \
-         (if this is the first run, grant in System Settings → Privacy & Security → \
-         Screen Recording, then **restart Meetly**)"
-    ));
+    // 只在本次进程生命周期内请求一次，避免每次截图/启动都重复弹出系统授权框。
+    // 注意：macOS 对「屏幕录制」授权是 per-process 缓存的——用户在系统设置里
+    // 勾选之后，必须完全退出并重新打开 Meetly，preflight 才会返回 true。
+    static REQUESTED: AtomicBool = AtomicBool::new(false);
+    if !REQUESTED.swap(true, Ordering::SeqCst) {
+        let _ = unsafe { CGRequestScreenCaptureAccess() };
+        let _ = crate::debug_log::append(
+            "[screen-capture] screen recording permission not granted; requested once",
+        );
+    }
+
+    Err(
+        "尚未获得屏幕录制权限。请在弹出的系统提示中点「允许」，或到「系统设置 → \
+         隐私与安全性 → 录屏与系统录音」勾选 Meetly，然后 **完全退出并重新打开 Meetly**。"
+            .to_string(),
+    )
 }
 
 #[cfg(target_os = "macos")]
