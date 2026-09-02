@@ -84,6 +84,8 @@ pub fn run() {
             app::assistant_service::complete_assistant_with_question,
             app::assistant_service::complete_voice_ask,
             app::report_service::generate_interview_report,
+            app::screen_capture::capture_screen,
+            app::screen_capture::analyze_screenshot,
         ])
         .setup(|app| {
             let _ = debug_log::append(&format!(

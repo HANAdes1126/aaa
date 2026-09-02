@@ -105,6 +105,71 @@ export function useAssistantAsk(
     }
   }, [agent, ctx, flushCurrentMicSegment, session, windowActions]);
 
+  const askScreenshot = useCallback(async (question?: string) => {
+    if (ctx.isAsking) return;
+
+    const resolved = question?.trim() || "帮我看看屏幕上的内容";
+    ctx.setIsAsking(true);
+    ctx.setAssistantError(null);
+    ctx.setAssistantSuggestion(null);
+    ctx.setAssistantDraft("");
+    await windowActions.setPanel("assistant");
+
+    const askId = createId("shot");
+    const createdAt = Date.now();
+    const pendingTurn: AgentChatTurn = {
+      id: askId,
+      createdAt,
+      question: resolved,
+      suggestion: null,
+      error: null,
+      toolTraces: [],
+    };
+    setChatTurns(ctx, [...ctx.agentChatTurnsRef.current, pendingTurn]);
+    agent.recordManualAskStarted(askId);
+
+    try {
+      const capture = await safeInvoke<{
+        imageBase64: string;
+        mimeType: string;
+        width: number;
+        height: number;
+      }>("capture_screen");
+      if (!capture?.imageBase64) {
+        throw new Error("未能截取屏幕。");
+      }
+
+      debugLog(
+        `[agent-shot] captured w=${capture.width} h=${capture.height} chars=${capture.imageBase64.length}`
+      );
+
+      const suggestion = await safeInvoke<AssistantSuggestion>("analyze_screenshot", {
+        imageBase64: capture.imageBase64,
+        question: resolved,
+      });
+      if (!suggestion) {
+        throw new Error("未能分析截图。");
+      }
+
+      setChatTurns(ctx, ctx.agentChatTurnsRef.current.map((turn) =>
+        turn.id === askId ? { ...turn, suggestion, error: null } : turn
+      ));
+      ctx.setAssistantSuggestion(suggestion);
+      ctx.setAssistantError(null);
+      ctx.setIsAsking(false);
+      agent.recordManualAskFinished(askId, "spoken", "message_committed");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      agent.recordManualAskFinished(askId, "failed", "request_failed");
+      ctx.setAssistantError(message);
+      ctx.setAssistantDraft("");
+      ctx.setIsAsking(false);
+      setChatTurns(ctx, ctx.agentChatTurnsRef.current.map((turn) =>
+        turn.id === askId ? { ...turn, error: message } : turn
+      ));
+    }
+  }, [agent, ctx, windowActions]);
+
   useEffect(() => {
     const handleAskShortcut = (event: KeyboardEvent) => {
       if (event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
@@ -136,7 +201,7 @@ export function useAssistantAsk(
     ctx.setAssistantError(null);
   }, [ctx]);
 
-  return { askAssistant, clearConversation };
+  return { askAssistant, askScreenshot, clearConversation };
 }
 
 export type AssistantAskActions = ReturnType<typeof useAssistantAsk>;

@@ -4,6 +4,7 @@ mod coach_agent;
 pub mod document_service;
 pub mod prompt_orchestrator;
 pub mod report_service;
+pub mod screen_capture;
 mod voice_agent;
 
 #[cfg(test)]

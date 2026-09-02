@@ -380,6 +380,83 @@ pub(crate) async fn complete(
     Err(error)
 }
 
+/// Runs a single vision completion: sends a screenshot (base64 JPEG) together
+/// with a user question to the configured OpenAI-compatible endpoint, reusing
+/// the same 11101 streaming fallback as the text tool loop. No tool registry
+/// is involved — vision analysis is a single, non-tooled turn, so the image
+/// is attached as an `image_url` content part on the user message.
+pub(crate) async fn complete_vision(
+    app: &AppHandle,
+    system_prompt: String,
+    image_base64: String,
+    image_mime: String,
+    question: String,
+) -> Result<AssistantSuggestion, String> {
+    let credentials =
+        credentials::resolve(app, ProviderKind::Llm).map_err(|error| error.to_string())?;
+    if credentials.provider_id != ProviderId::OpenAiCompatible {
+        return Err(format!(
+            "Provider {} does not support vision yet.",
+            credentials.provider_id.as_str()
+        ));
+    }
+
+    let image_url = format!("data:{image_mime};base64,{image_base64}");
+    let user_content = json!([
+        { "type": "text", "text": question },
+        { "type": "image_url", "image_url": { "url": image_url } },
+    ]);
+
+    let request_messages = vec![
+        json!({ "role": "system", "content": system_prompt }),
+        json!({ "role": "user", "content": user_content }),
+    ];
+
+    let _ = crate::debug_log::append(&format!(
+        "[agent-vision] run start model={} image_chars={} question_chars={}",
+        safe_log_text(&credentials.model, 120),
+        image_base64.len(),
+        question.chars().count()
+    ));
+
+    let client = reqwest::Client::new();
+    let response = request_completion(
+        &client,
+        &credentials.base_url,
+        &credentials.api_key,
+        &credentials.model,
+        &request_messages,
+        &[],
+        false,
+        false,
+    )
+    .await
+    .map_err(|error| {
+        let _ = crate::debug_log::append(&format!(
+            "[agent-vision] run failed error={}",
+            log_json_string(&safe_log_text(&error, 800))
+        ));
+        error
+    })?;
+
+    let message = response
+        .choices
+        .into_iter()
+        .next()
+        .map(|choice| choice.message)
+        .ok_or_else(|| "LLM response missing choices[0].message".to_string())?;
+    let content = message
+        .content
+        .filter(|content| !content.trim().is_empty())
+        .ok_or_else(|| "LLM response did not contain an answer.".to_string())?;
+
+    let _ = crate::debug_log::append(&format!(
+        "[agent-vision] run completed answer_chars={}",
+        content.chars().count()
+    ));
+    Ok(parse_suggestion(&content))
+}
+
 async fn request_completion(
     client: &reqwest::Client,
     base_url: &str,

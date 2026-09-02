@@ -2314,6 +2314,8 @@ dependencies = [
  "num-traits",
  "png 0.18.1",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -2744,6 +2746,7 @@ dependencies = [
  "futures-util",
  "handy-keys",
  "hound",
+ "image",
  "objc2",
  "objc2-app-kit",
  "pdf-extract",

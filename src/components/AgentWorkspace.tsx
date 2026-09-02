@@ -1,6 +1,7 @@
 import {
   ArrowUp,
   Asterisk,
+  Camera,
   Check,
   ChevronDown,
   AudioLines,
@@ -32,6 +33,7 @@ type WorkspaceView = "agent" | "fn" | "dictation" | "meetings" | "logs" | "setti
 
 type AgentWorkspaceProps = {
   askAssistant: (message?: string) => Promise<void>;
+  askScreenshot: (question?: string) => Promise<void>;
   clearConversation: () => void;
   closePanel: () => void;
   ctx: ReturnType<typeof useMeetlyState>;
@@ -58,6 +60,7 @@ const NAV_ITEMS: Array<{
 
 export function AgentWorkspace({
   askAssistant,
+  askScreenshot,
   clearConversation,
   closePanel,
   ctx,
@@ -137,6 +140,15 @@ export function AgentWorkspace({
                 </button>
                 <button className="workspace-header-button" title="上传资料" aria-label="上传资料" onClick={openFilePicker}>
                   <FileText />
+                </button>
+                <button
+                  className="workspace-header-button"
+                  title="截图提问"
+                  aria-label="截图提问"
+                  disabled={ctx.isAsking}
+                  onClick={() => void askScreenshot(draft.trim() || undefined)}
+                >
+                  <Camera />
                 </button>
               </>
             )}
