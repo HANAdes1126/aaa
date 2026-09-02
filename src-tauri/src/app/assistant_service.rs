@@ -115,6 +115,7 @@ pub async fn complete_voice_ask(
     question: String,
     selected_text: Option<String>,
     turns: Vec<VoiceAskTurnInput>,
+    mode: Option<AssistantMode>,
 ) -> Result<AssistantSuggestion, String> {
     let question = normalize_required(&question, MAX_VOICE_ASK_QUESTION_CHARS, "Question")?;
     let selected_text = selected_text
@@ -123,14 +124,16 @@ pub async fn complete_voice_ask(
     let question_with_evidence = attach_knowledge_evidence(&question);
     let messages =
         build_voice_ask_messages(selected_text.as_deref(), &turns, &question_with_evidence);
-    let system_prompt = format!(
-        "{}\n\n{}",
-        build_system_prompt(AssistantMode::General),
-        VOICE_ASK_CONVERSATION_PROMPT
-    );
+    // Default to Interview — voice overlay is most often used during a live
+    // interview, and Interview's persona enforces "first-person, no
+    // meta-advice" so the user gets a usable sentence instead of coaching
+    // tips. Frontend passes an explicit mode when the user switches.
+    let resolved_mode = mode.unwrap_or(AssistantMode::Interview);
+    let base_prompt = build_system_prompt(resolved_mode);
+    let system_prompt = format!("{base_prompt}\n\n{VOICE_ASK_CONVERSATION_PROMPT}");
 
     let _ = crate::debug_log::append(&format!(
-        "[voice-ask] complete conversation history_turns={} selected_chars={} question_chars={} messages={}",
+        "[voice-ask] complete conversation history_turns={} selected_chars={} question_chars={} messages={} mode={resolved_mode:?}",
         turns.len().min(MAX_VOICE_ASK_HISTORY_TURNS),
         selected_text
             .as_ref()
@@ -140,7 +143,7 @@ pub async fn complete_voice_ask(
         messages.len()
     ));
 
-    super::voice_agent::complete(&app, run_id, system_prompt, messages).await
+    super::voice_agent::complete(&app, run_id, system_prompt, messages, resolved_mode).await
 }
 
 fn build_voice_ask_messages(

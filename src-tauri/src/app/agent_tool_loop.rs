@@ -6,13 +6,17 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
-
 const MAX_AGENT_STEPS: usize = 3;
 const MAX_SEARCH_CALLS: usize = 1;
 const DEFAULT_SEARCH_LIMIT: u8 = 3;
 const MAX_SEARCH_QUERY_CHARS: usize = 300;
 const CURRENT_INFORMATION_FRESHNESS_DAYS: u16 = 14;
 const MAX_LOG_CONTENT_CHARS: usize = 2_000;
+/// Below this user-message character count we skip the web_search tool loop
+/// entirely. Voice queries are short and live, so paying a 1-3s tool round
+/// trip for a 1-2 sentence answer is the wrong trade. Tuned for Chinese
+/// (a short Chinese sentence is ~15 chars).
+const SHORT_QUERY_SKIP_TOOLS_CHARS: usize = 30;
 
 const WEB_SEARCH_SYSTEM_PROMPT: &str = "\
 Web search is enabled. You have a web_search tool backed by Exa. Use it when \
@@ -166,6 +170,47 @@ impl AgentWorkflow {
             Self::FnGeneral => "Fn General Agent",
         }
     }
+
+    /// Voice / live workflow = stream-first, capped, low-temperature.
+    /// Text / prefetch workflow = non-stream, default cap, default temperature.
+    fn tuning(self) -> CompletionTuning {
+        match self {
+            Self::MeetingCoach => CompletionTuning::voice(),
+            Self::FnGeneral => CompletionTuning::default_text(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CompletionTuning {
+    /// Stream tokens as they arrive. Required for 11101-rejecting endpoints
+    /// (e.g. Copilot) and gives lower perceived latency on every endpoint.
+    stream: bool,
+    /// Cap on the model output. Zero means "no cap". Lowering this is the
+    /// single biggest lever for total-latency reduction when the model would
+    /// otherwise ramble in JSON.
+    max_tokens: u16,
+    /// Lower for voice so the first tokens are more deterministic and the
+    /// model commits to the JSON shape faster.
+    temperature: f32,
+}
+
+impl CompletionTuning {
+    const fn voice() -> Self {
+        Self {
+            stream: true,
+            max_tokens: 350,
+            temperature: 0.2,
+        }
+    }
+
+    const fn default_text() -> Self {
+        Self {
+            stream: false,
+            max_tokens: 0,
+            temperature: 0.3,
+        }
+    }
 }
 
 pub(crate) async fn complete(
@@ -187,15 +232,26 @@ pub(crate) async fn complete(
 
     let trace_id =
         normalized_trace_id(trace_id.as_deref()).unwrap_or_else(|| generated_trace_id(workflow));
-    let tools = registered_tools(app);
+    let registered = registered_tools(app);
     let search_policy = SearchPolicy::from_messages(&messages);
+    let user_query_chars = last_user_message_chars(&messages);
+    let short_query = user_query_chars < SHORT_QUERY_SKIP_TOOLS_CHARS;
+    // Short voice queries don't earn a 1-3s web_search round trip. The model
+    // can answer a 1-2 sentence ask in well under 1s with the voice tuning;
+    // forcing it through the tool loop doubles the perceived latency and
+    // adds a hard "正在查" gap the user has to wait through.
+    let tools = if short_query {
+        Vec::new()
+    } else {
+        registered
+    };
     let search_requirement = if workflow == AgentWorkflow::FnGeneral && !tools.is_empty() {
         detect_search_requirement(&messages)
     } else {
         SearchRequirement::Optional
     };
     let _ = crate::debug_log::append(&format!(
-        "[agent-tool-loop] run start trace={} workflow={} model={} tools={} search_required={} freshness_days={}",
+        "[agent-tool-loop] run start trace={} workflow={} model={} tools={} search_required={} freshness_days={} user_query_chars={} short_query={}",
         trace_id,
         workflow.as_str(),
         safe_log_text(&credentials.model, 120),
@@ -204,7 +260,9 @@ pub(crate) async fn complete(
         search_requirement
             .freshness_days()
             .map(|days| days.to_string())
-            .unwrap_or_else(|| "none".to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        user_query_chars,
+        short_query
     ));
     let system_prompt = if tools.is_empty() {
         system_prompt
@@ -240,6 +298,7 @@ pub(crate) async fn complete(
             &tools,
             force_search,
             search_requirement.is_required(),
+            &workflow.tuning(),
         )
         .await
         .map_err(|error| {
@@ -380,6 +439,18 @@ pub(crate) async fn complete(
     Err(error)
 }
 
+/// Returns the character count of the most recent user message, or 0 if the
+/// caller never sent one. Used to short-circuit the web_search tool loop on
+/// quick voice asks.
+fn last_user_message_chars(messages: &[ChatMessage]) -> usize {
+    messages
+        .iter()
+        .rev()
+        .find(|message| message.role == ChatRole::User)
+        .map(|message| message.content.chars().count())
+        .unwrap_or(0)
+}
+
 /// Runs a single vision completion: sends a screenshot (base64 JPEG) together
 /// with a user question to the configured OpenAI-compatible endpoint, reusing
 /// the same 11101 streaming fallback as the text tool loop. No tool registry
@@ -429,6 +500,7 @@ pub(crate) async fn complete_vision(
         &[],
         false,
         false,
+        &CompletionTuning::default_text(),
     )
     .await
     .map_err(|error| {
@@ -466,9 +538,20 @@ async fn request_completion(
     tools: &[Value],
     force_search: bool,
     disable_reasoning: bool,
+    tuning: &CompletionTuning,
 ) -> Result<CompletionResponse, String> {
-    let mut body = completion_body(model, messages, tools, force_search);
+    let started_at = unix_time_ms();
+    let mut body = completion_body(model, messages, tools, force_search, tuning);
     apply_provider_request_options(base_url, disable_reasoning, &mut body);
+
+    // For voice (tuning.stream = true) the path is straightforward: the
+    // server gives us SSE deltas. For text the legacy path is kept (non-stream
+    // first, with a tight 11101 fallback) to preserve the existing behaviour
+    // for prefetch / vision callers.
+    if tuning.stream {
+        return request_streaming_completion(client, base_url, api_key, &body, started_at, model)
+            .await;
+    }
 
     let response = client
         .post(base_url)
@@ -479,10 +562,12 @@ async fn request_completion(
         .map_err(|error| error.to_string())?;
     let status = response.status();
     if status.is_success() {
-        return response
+        let response = response
             .json::<CompletionResponse>()
             .await
-            .map_err(|error| error.to_string());
+            .map_err(|error| error.to_string())?;
+        log_request_timing(model, started_at, None, "non_stream_ok");
+        return Ok(response);
     }
 
     let error_body = response.text().await.unwrap_or_default();
@@ -493,10 +578,13 @@ async fn request_completion(
         let _ = crate::debug_log::append(
             "[agent-llm] non-stream request rejected with 11101; retrying stream",
         );
+        log_request_timing(model, started_at, None, "non_stream_11101_fallback");
         body["stream"] = json!(true);
-        return request_streaming_completion(client, base_url, api_key, &body).await;
+        return request_streaming_completion(client, base_url, api_key, &body, started_at, model)
+            .await;
     }
 
+    log_request_timing(model, started_at, None, "non_stream_error");
     let _ = crate::debug_log::append(&format!(
         "[agent-llm] non-stream request rejected status={status}; no streaming retry",
     ));
@@ -508,6 +596,8 @@ async fn request_streaming_completion(
     base_url: &str,
     api_key: &str,
     body: &Value,
+    started_at: u64,
+    model: &str,
 ) -> Result<CompletionResponse, String> {
     let response = client
         .post(base_url)
@@ -518,6 +608,7 @@ async fn request_streaming_completion(
         .map_err(|error| error.to_string())?;
     let status = response.status();
     if !status.is_success() {
+        log_request_timing(model, started_at, None, "stream_error");
         let _ = crate::debug_log::append(&format!(
             "[agent-llm] streaming retry rejected status={status}",
         ));
@@ -527,11 +618,34 @@ async fn request_streaming_completion(
     let _ = crate::debug_log::append("[agent-llm] streaming retry accepted");
     let mut bytes = response.bytes_stream();
     let mut payload = String::new();
+    let mut first_byte_at: Option<u64> = None;
     while let Some(chunk) = bytes.next().await {
         let chunk = chunk.map_err(|error| error.to_string())?;
+        if first_byte_at.is_none() {
+            first_byte_at = Some(unix_time_ms());
+        }
         payload.push_str(&String::from_utf8_lossy(&chunk));
     }
-    completion_from_sse(&payload)
+    let result = completion_from_sse(&payload);
+    log_request_timing(model, started_at, first_byte_at, "stream_ok");
+    result
+}
+
+/// Records request timings as a single line so the latency budget is
+/// observable in the debug log. `first_byte_at` is None for non-stream
+/// paths (TTFT is not applicable there).
+fn log_request_timing(model: &str, started_at: u64, first_byte_at: Option<u64>, outcome: &str) {
+    let total_ms = unix_time_ms().saturating_sub(started_at);
+    let ttft_ms = first_byte_at.map(|t| t.saturating_sub(started_at));
+    let _ = crate::debug_log::append(&format!(
+        "[agent-llm] timing model={} outcome={} total_ms={} ttft_ms={}",
+        safe_log_text(model, 80),
+        outcome,
+        total_ms,
+        ttft_ms
+            .map(|ms| ms.to_string())
+            .unwrap_or_else(|| "n/a".to_string())
+    ));
 }
 
 fn requires_streaming_retry(status: StatusCode, body: &str) -> bool {
@@ -596,13 +710,22 @@ fn apply_provider_request_options(base_url: &str, disable_reasoning: bool, body:
     }
 }
 
-fn completion_body(model: &str, messages: &[Value], tools: &[Value], force_search: bool) -> Value {
+fn completion_body(
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    force_search: bool,
+    tuning: &CompletionTuning,
+) -> Value {
     let mut body = json!({
         "model": model,
         "messages": messages,
-        "temperature": 0.3,
-        "stream": false,
+        "temperature": tuning.temperature,
+        "stream": tuning.stream,
     });
+    if tuning.max_tokens > 0 {
+        body["max_tokens"] = json!(tuning.max_tokens);
+    }
     if !tools.is_empty() {
         body["tools"] = json!(tools);
         body["tool_choice"] = if force_search {
@@ -1055,6 +1178,7 @@ mod tests {
             &[json!({ "role": "user", "content": "hi" })],
             &[],
             false,
+            &CompletionTuning::default_text(),
         );
         assert!(body.get("tools").is_none());
         assert!(body.get("tool_choice").is_none());
@@ -1064,7 +1188,7 @@ mod tests {
     #[test]
     fn agent_request_registers_available_tools() {
         let tools = vec![web_search_tool()];
-        let body = completion_body("model", &[], &tools, false);
+        let body = completion_body("model", &[], &tools, false, &CompletionTuning::default_text());
         assert_eq!(body["tools"][0]["function"]["name"], "web_search");
         assert_eq!(body["tool_choice"], "auto");
     }
@@ -1072,10 +1196,37 @@ mod tests {
     #[test]
     fn current_information_forces_web_search() {
         let tools = vec![web_search_tool()];
-        let body = completion_body("model", &[], &tools, true);
+        let body = completion_body("model", &[], &tools, true, &CompletionTuning::default_text());
 
         assert_eq!(body["tool_choice"]["type"], "function");
         assert_eq!(body["tool_choice"]["function"]["name"], "web_search");
+    }
+
+    #[test]
+    fn voice_tuning_caps_max_tokens_and_streams() {
+        let body = completion_body("model", &[], &[], false, &CompletionTuning::voice());
+        assert_eq!(body["stream"], json!(true));
+        assert_eq!(body["temperature"], json!(0.2_f32));
+        assert_eq!(body["max_tokens"], json!(350));
+    }
+
+    #[test]
+    fn text_tuning_omits_max_tokens() {
+        let body = completion_body("model", &[], &[], false, &CompletionTuning::default_text());
+        assert_eq!(body["stream"], json!(false));
+        assert_eq!(body["temperature"], json!(0.3_f32));
+        assert!(body.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn short_user_query_skips_tool_loop() {
+        assert!(last_user_message_chars(&[ChatMessage::user("今天怎么样")])
+            < SHORT_QUERY_SKIP_TOOLS_CHARS);
+        assert!(
+            last_user_message_chars(&[ChatMessage::user(
+                "这个项目的核心难点是什么？请从架构、并发、数据一致性三方面分析"
+            )]) >= SHORT_QUERY_SKIP_TOOLS_CHARS
+        );
     }
 
     #[test]
@@ -1088,7 +1239,13 @@ mod tests {
 
     #[test]
     fn deepseek_tool_requests_disable_thinking_mode() {
-        let mut body = completion_body("model", &[], &[web_search_tool()], true);
+        let mut body = completion_body(
+            "model",
+            &[],
+            &[web_search_tool()],
+            true,
+            &CompletionTuning::default_text(),
+        );
         apply_provider_request_options(
             "https://api.deepseek.com/chat/completions",
             true,
@@ -1098,7 +1255,13 @@ mod tests {
         assert_eq!(body["thinking"]["type"], "disabled");
         assert_eq!(body["tool_choice"]["function"]["name"], "web_search");
 
-        let mut ordinary_body = completion_body("model", &[], &[web_search_tool()], false);
+        let mut ordinary_body = completion_body(
+            "model",
+            &[],
+            &[web_search_tool()],
+            false,
+            &CompletionTuning::default_text(),
+        );
         apply_provider_request_options(
             "https://api.deepseek.com/chat/completions",
             false,

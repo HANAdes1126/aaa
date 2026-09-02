@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { blobToBase64, debugLog, isTauriRuntime } from "../platform";
 import { startMicrophoneClip, type MicrophoneClipSession } from "../microphoneClip";
-import type { AssistantSuggestion } from "../types";
+import type { AssistantMode, AssistantSuggestion } from "../types";
 import type {
   VoiceAskContextCaptured,
   VoiceAskShortcutPressed,
@@ -25,11 +25,20 @@ export function useVoiceAsk() {
   conversationRef.current = conversation;
   const state = selectVoiceAskViewState(conversation);
   const [audioLevel, setAudioLevel] = useState(0);
+  // Default to interview — voice overlay is most often used during a live
+  // interview, and Interview's persona enforces "first-person, no meta-advice"
+  // so the user gets a usable sentence instead of coaching tips. User can
+  // switch from the compact recording bar before pressing Fn.
+  const [mode, setMode] = useState<AssistantMode>("interview");
   const currentRunRef = useRef<string | null>(null);
   const clipSessionRef = useRef<MicrophoneClipSession | null>(null);
   const pendingReleaseRef = useRef(false);
   const cancelledRef = useRef(false);
   const resetTimerRef = useRef<number | null>(null);
+  // Keep mode in a ref so the latest value is read inside async handlers
+  // without re-running the effect that wires the listeners.
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -191,6 +200,7 @@ export function useVoiceAsk() {
             question: turn.question,
             suggestion: turn.suggestion,
           })),
+          mode: modeRef.current,
         }
       );
       assertCurrent(runId);
@@ -258,7 +268,15 @@ export function useVoiceAsk() {
     debugLog("[voice-ask] new conversation");
   };
 
-  return { state, conversation, audioLevel, close, newConversation };
+  return {
+    state,
+    conversation,
+    audioLevel,
+    close,
+    newConversation,
+    mode,
+    setMode,
+  };
 }
 
 function errorMessage(error: unknown) {

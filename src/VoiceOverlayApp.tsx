@@ -31,7 +31,7 @@ import {
   type VoiceOverlayPresentationMode,
 } from "./app/voiceOverlay/presentation";
 import { isNearScrollBottom } from "./app/voiceOverlay/autoScroll";
-import type { AssistantSuggestion } from "./app/types";
+import type { AssistantMode, AssistantSuggestion } from "./app/types";
 import { useVoiceAsk } from "./app/voiceAsk/useVoiceAsk";
 import { AudioBars } from "./components/AudioBars";
 
@@ -46,6 +46,17 @@ const FOLLOWUP_OVERLAY_HEIGHT =
   ANSWER_OVERLAY_HEIGHT + FOLLOWUP_PILL_HEIGHT + FOLLOWUP_PILL_GAP;
 const EXPANDED_OVERLAY_WIDTH = 720;
 const EXPANDED_OVERLAY_HEIGHT = 680;
+
+/// Short Chinese labels for the mode chip in the compact recording bar. The
+/// persona drives the agent's behaviour, not the chip, so users get the
+/// same answer shape they already know from the main work island.
+const MODE_LABELS: Record<AssistantMode, string> = {
+  general: "通用",
+  interview: "面试",
+  interviewer: "面试官",
+  meeting: "会议",
+  sales: "销售",
+};
 
 export function VoiceOverlayApp() {
   const dictation = useDictation();
@@ -228,6 +239,8 @@ export function VoiceOverlayApp() {
             collapse={() => dispatchPresentation({ type: "collapse" })}
             hide={hideVoiceAsk}
             newConversation={voiceAsk.newConversation}
+            mode={voiceAsk.mode}
+            setMode={voiceAsk.setMode}
           />
         ) : (
           <DictationBubble
@@ -254,6 +267,8 @@ function VoiceAskOverlay({
   collapse,
   hide,
   newConversation,
+  mode,
+  setMode,
 }: {
   state: VoiceAskViewState;
   conversation: VoiceAskConversationState;
@@ -264,8 +279,20 @@ function VoiceAskOverlay({
   collapse: () => void;
   hide: () => void;
   newConversation: () => void;
+  mode: AssistantMode;
+  setMode: (next: AssistantMode) => void;
 }) {
   const isThinking = state.phase === "transcribing" || state.phase === "thinking";
+  const modeLabel = MODE_LABELS[mode];
+  const cycleMode = () => {
+    // Cycle through the four high-value live-situation modes. General is the
+    // catch-all for open-ended Q&A; tapping the chip in the recording bar
+    // before pressing Fn is enough to switch.
+    const order: AssistantMode[] = ["interview", "meeting", "sales", "general"];
+    const index = order.indexOf(mode);
+    const next = order[(index + 1) % order.length];
+    setMode(next);
+  };
 
   if (presentationMode === "expanded") {
     return (
@@ -386,6 +413,15 @@ function VoiceAskOverlay({
           <span className="text-[12px] font-medium text-white/62">准备中</span>
         )}
       </div>
+      <button
+        type="button"
+        onClick={cycleMode}
+        title={`工作模式：${modeLabel}（点击切换）`}
+        aria-label={`工作模式：${modeLabel}，点击切换`}
+        className="voice-mode-chip"
+      >
+        {modeLabel}
+      </button>
       <span className="voice-icon-status" title={state.message ?? undefined}>
         <Asterisk />
       </span>
