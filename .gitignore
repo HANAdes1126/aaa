@@ -1,0 +1,16 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+.DS_Store
+*.log
+
+docs/learn/
+
+# AI assistant workspace memory (not part of the project source)
+.workbuddy/
+
+# Local dev-only provider credentials. Never commit real API keys.
+.env
+.env.*

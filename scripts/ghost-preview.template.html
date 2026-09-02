@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Meetly Ghost 模式预览与调参</title>
+    <style>
+      /* __APP_CSS__ */
+    </style>
+    <style>
+      :root {
+        --pv-bg: #1c1c1e;
+        --pv-fg: #1d1d1f;
+        --pv-muted: #6e6e73;
+        --pv-line: #d2d2d7;
+        --pv-card: #ffffff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px;
+        background: #f5f5f7;
+        color: var(--pv-fg);
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: -0.01em; }
+      .sub { color: var(--pv-muted); font-size: 13px; margin: 0 0 20px; line-height: 1.6; }
+      .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+      .card {
+        background: var(--pv-card);
+        border: 1px solid var(--pv-line);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .card h2 { font-size: 13px; margin: 0 0 12px; font-weight: 600; }
+      .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+      .row label { font-size: 12px; color: var(--pv-muted); }
+      .row output { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--pv-fg); }
+      input[type="range"] { width: 100%; accent-color: #0071e3; }
+      .switch { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; cursor: pointer; font-size: 13px; }
+      .bgpick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+      .bgpick button {
+        font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 7px;
+        border: 1px solid var(--pv-line); background: #fff; color: var(--pv-fg); cursor: pointer;
+      }
+      .bgpick button.on { background: var(--pv-fg); color: #fff; border-color: var(--pv-fg); }
+      pre {
+        margin: 12px 0 0; padding: 10px; background: #f5f5f7; border-radius: 8px;
+        font-size: 11px; line-height: 1.6; overflow-x: auto; color: #3a3a3c;
+      }
+      .copy { margin-top: 8px; width: 100%; font: inherit; font-size: 12px; padding: 7px; border-radius: 7px;
+        border: 1px solid var(--pv-line); background: #fff; cursor: pointer; }
+      .copy:hover { background: #f5f5f7; }
+      /* --- 模拟屏幕 --- */
+      .screen {
+        position: relative; border-radius: 14px; overflow: hidden; height: 520px;
+        border: 1px solid var(--pv-line); box-shadow: 0 8px 30px rgb(0 0 0 / 0.08);
+      }
+      .screen .wall { position: absolute; inset: 0; }
+      .wall-light { background: linear-gradient(135deg, #a8c0ff 0%, #d7e4ff 45%, #f3e7e9 100%); }
+      .wall-dark { background: linear-gradient(135deg, #23252b 0%, #31343d 50%, #1b1c21 100%); }
+      .wall-call {
+        background:
+          radial-gradient(60% 60% at 25% 30%, #4a5568 0%, transparent 70%),
+          radial-gradient(50% 50% at 75% 65%, #5c5148 0%, transparent 70%),
+          #22242a;
+      }
+      .wall-doc { background: #ffffff; }
+      .wall-doc::after {
+        content: ""; position: absolute; inset: 40px 60px;
+        background: repeating-linear-gradient(#e9e9ec 0 1px, transparent 1px 26px);
+      }
+      /* 模拟被拍摄的内容 */
+      .fake-window {
+        position: absolute; left: 40px; top: 46px; width: 460px; height: 300px;
+        background: rgb(255 255 255 / 0.94); border-radius: 10px;
+        box-shadow: 0 10px 40px rgb(0 0 0 / 0.18); overflow: hidden;
+      }
+      .fake-window .bar { height: 26px; background: #e8e8ed; display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+      .fake-window .dot { width: 9px; height: 9px; border-radius: 50%; }
+      .fake-window .body { padding: 14px 16px; font-size: 12px; color: #48484a; line-height: 1.9; }
+      .wall-dark .fake-window, .wall-call .fake-window { background: rgb(30 32 38 / 0.92); }
+      .wall-dark .fake-window .bar, .wall-call .fake-window .bar { background: #2c2e35; }
+      .wall-dark .fake-window .body, .wall-call .fake-window .body { color: #c7c7cc; }
+      /* --- 悬浮岛与面板定位 --- */
+      .island-slot { position: absolute; left: 50%; transform: translateX(-50%); top: 18px; width: 560px; }
+      .panel-slot { position: absolute; left: 50%; transform: translateX(-50%); bottom: 22px; width: 520px; }
+      /* 让示例面板在未开启 ghost 时也能看清结构 */
+      /* --- 基线：未开启 ghost 时的原始外观（预览页本地复刻，非正式产物） --- */
+      .meetly-island {
+        display: flex; align-items: center; gap: 6px; height: 48px; width: fit-content;
+        margin: 0 auto; padding: 6px; border-radius: 10px;
+        background: rgb(247 247 243 / 0.94); border: 1px solid rgb(0 0 0 / 0.1);
+        box-shadow: 0 8px 24px rgb(0 0 0 / 0.12); backdrop-filter: blur(14px);
+      }
+      .meetly-island button, .meetly-island .voice-toolbar-button {
+        font: inherit; font-size: 13px; width: 32px; height: 32px; display: flex;
+        align-items: center; justify-content: center; border-radius: 8px; cursor: pointer;
+        border: 1px solid rgb(0 0 0 / 0.08); background: #f0f0ea; color: #3a3a38;
+      }
+      .voice-launch-button { background: #2f6bff !important; color: #fff !important; border-color: transparent !important; }
+      .voice-toolbar-button--active { background: #dfe6ff !important; color: #2f6bff !important; }
+
+      .demo-panel {
+        border-radius: 12px; padding: 14px 16px; font-size: 13px; line-height: 1.75;
+        background: rgb(247 247 243 / 0.94); border: 1px solid rgb(0 0 0 / 0.08);
+        box-shadow: 0 10px 30px rgb(0 0 0 / 0.1); backdrop-filter: blur(14px);
+        color: #1d1d1f;
+      }
+      .demo-panel h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+      .demo-panel .agent-message-meta { font-size: 11px; opacity: 0.6; margin-bottom: 8px; }
+      .demo-panel .accent { color: #2f6bff; font-weight: 600; }
+      .demo-panel .rowdemo { display: flex; gap: 8px; margin-top: 10px; }
+      .ui-primary-button {
+        font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 7px; cursor: pointer;
+        border: 1px solid transparent; background: #2f6bff; color: #fff;
+      }
+      .ui-secondary-button {
+        font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 7px; cursor: pointer;
+        border: 1px solid rgb(0 0 0 / 0.1); background: #ececec; color: #333;
+      }
+      .session-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #38d879; }
+      .hint { font-size: 12px; color: var(--pv-muted); margin: 12px 0 0; line-height: 1.7; }
+      code { background: #f0f0f2; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <h1>Meetly Ghost 模式 —— 预览与调参</h1>
+    <p class="sub">
+      左侧调节，右侧实时预览。Ghost 模式下所有面板背景、边框、阴影、强调色全部中和成同一档中灰，
+      文字按「正文 / 常规 / 次要」三档透明度分层。下面的数值就是 <code>src/styles.css</code> 里
+      <code>.meetly-ghost</code> 的四个变量，调好后点「复制」粘回去即可。
+    </p>
+
+    <div class="layout">
+      <div class="card">
+        <h2>参数</h2>
+        <label class="switch">
+          <input id="ghostOn" type="checkbox" checked />
+          <span>开启 Ghost 模式</span>
+        </label>
+
+        <div class="row"><label>字体灰度 --ghost-ink</label><output id="oInk"></output></div>
+        <input id="ink" type="range" min="80" max="200" step="1" value="130" />
+
+        <div class="row"><label>正文 --ghost-strong</label><output id="oStrong"></output></div>
+        <input id="strong" type="range" min="0.2" max="1" step="0.01" value="0.82" />
+
+        <div class="row"><label>常规 --ghost-base</label><output id="oBase"></output></div>
+        <input id="base" type="range" min="0.2" max="1" step="0.01" value="0.66" />
+
+        <div class="row"><label>次要 --ghost-soft</label><output id="oSoft"></output></div>
+        <input id="soft" type="range" min="0.1" max="0.9" step="0.01" value="0.46" />
+
+        <h2 style="margin-top: 20px">背景场景</h2>
+        <div class="bgpick" id="bgpick">
+          <button data-bg="wall-light" class="on">浅色桌面</button>
+          <button data-bg="wall-dark">深色桌面</button>
+          <button data-bg="wall-call">视频会议</button>
+          <button data-bg="wall-doc">白底文档</button>
+        </div>
+
+        <pre id="out"></pre>
+        <button class="copy" id="copy">复制 CSS 变量</button>
+        <p class="hint" id="copyHint" style="display: none">已复制到剪贴板。</p>
+      </div>
+
+      <div>
+        <div class="screen" id="screen">
+          <div class="wall wall-light" id="wall"></div>
+          <div class="fake-window">
+            <div class="bar">
+              <span class="dot" style="background: #ff5f57"></span>
+              <span class="dot" style="background: #febc2e"></span>
+              <span class="dot" style="background: #28c840"></span>
+            </div>
+            <div class="body">
+              这里是模拟的会议界面 / 文档内容，用来判断悬浮层在真实背景下有多显眼。<br />
+              双机位拍摄时，摄像机看到的画面大致就是这一层加上叠加的浮层。
+            </div>
+          </div>
+
+          <div class="island-slot" id="islandSlot">
+            <section class="meetly-island">
+              <button class="voice-launch-button" title="开始">▶</button>
+              <button class="voice-toolbar-button" title="工作台">▤</button>
+              <button class="voice-toolbar-button voice-toolbar-button--active" title="隐身">◉</button>
+              <button class="voice-toolbar-button" title="设置">⚙</button>
+              <div class="voice-toolbar-button" title="拖动">⠿</div>
+            </section>
+          </div>
+
+          <div class="panel-slot" id="panelSlot">
+            <div class="demo-panel app-panel">
+              <h3><span class="session-dot"></span>建议：先确认对方的决策链路</h3>
+              <div class="agent-message-meta">12:04 · Copilot · 刚才</div>
+              <div class="agent-markdown">
+                <p style="margin: 0">
+                  对方提到预算要下季度才批，可以先问清<span class="accent">谁签字、走什么流程</span>，
+                  再决定是否给阶梯报价。
+                </p>
+              </div>
+              <div class="rowdemo">
+                <button class="ui-primary-button">采纳</button>
+                <button class="ui-secondary-button">忽略</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="hint">
+          提示：真实应用里 ghost 模式由悬浮岛上的眼睛图标按钮切换，默认<strong>开启</strong>，
+          状态存在 <code>localStorage</code> 的 <code>meetly.ghost-mode</code>，主窗口与语音浮窗同步。
+        </p>
+      </div>
+    </div>
+
+    <script>
+      var ink = document.getElementById("ink");
+      var strong = document.getElementById("strong");
+      var base = document.getElementById("base");
+      var soft = document.getElementById("soft");
+      var ghostOn = document.getElementById("ghostOn");
+      var islandSlot = document.getElementById("islandSlot");
+      var panelSlot = document.getElementById("panelSlot");
+      var out = document.getElementById("out");
+
+      function apply() {
+        var g = Number(ink.value);
+        islandSlot.style.setProperty("--ghost-ink", g + " " + g + " " + (g + 2));
+        islandSlot.style.setProperty("--ghost-strong", strong.value);
+        islandSlot.style.setProperty("--ghost-base", base.value);
+        islandSlot.style.setProperty("--ghost-soft", soft.value);
+        panelSlot.style.setProperty("--ghost-ink", g + " " + g + " " + (g + 2));
+        panelSlot.style.setProperty("--ghost-strong", strong.value);
+        panelSlot.style.setProperty("--ghost-base", base.value);
+        panelSlot.style.setProperty("--ghost-soft", soft.value);
+
+        [islandSlot, panelSlot].forEach(function (el) {
+          el.classList.toggle("meetly-ghost", ghostOn.checked);
+        });
+
+        document.getElementById("oInk").value = g + " " + g + " " + (g + 2);
+        document.getElementById("oStrong").value = Number(strong.value).toFixed(2);
+        document.getElementById("oBase").value = Number(base.value).toFixed(2);
+        document.getElementById("oSoft").value = Number(soft.value).toFixed(2);
+
+        out.textContent =
+          ".meetly-ghost {\n" +
+          "  --ghost-ink: " + g + " " + g + " " + (g + 2) + ";\n" +
+          "  --ghost-strong: " + Number(strong.value).toFixed(2) + ";\n" +
+          "  --ghost-base: " + Number(base.value).toFixed(2) + ";\n" +
+          "  --ghost-soft: " + Number(soft.value).toFixed(2) + ";\n" +
+          "}";
+      }
+
+      [ink, strong, base, soft, ghostOn].forEach(function (el) {
+        el.addEventListener("input", apply);
+      });
+
+      document.getElementById("bgpick").addEventListener("click", function (e) {
+        var btn = e.target.closest("button");
+        if (!btn) return;
+        Array.prototype.forEach.call(this.querySelectorAll("button"), function (b) {
+          b.classList.remove("on");
+        });
+        btn.classList.add("on");
+        document.getElementById("wall").className = "wall " + btn.dataset.bg;
+      });
+
+      document.getElementById("copy").addEventListener("click", function () {
+        navigator.clipboard.writeText(out.textContent).then(function () {
+          var h = document.getElementById("copyHint");
+          h.style.display = "block";
+          setTimeout(function () { h.style.display = "none"; }, 1600);
+        });
+      });
+
+      apply();
+    </script>
+  </body>
+</html>
