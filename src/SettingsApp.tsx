@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { OnboardingPanel, type OnboardingStatus } from "./settings/OnboardingPanel";
 import { UpdateSection } from "./settings/UpdateSection";
@@ -251,6 +251,130 @@ export function ProviderSection({
           {section.testResult.message}
         </p>
       )}
+    </section>
+  );
+}
+
+type KnowledgeDoc = {
+  name: string;
+  size: number;
+  chunkCount: number;
+  updatedAtMs: number;
+};
+
+const MAX_KNOWLEDGE_FILE_BYTES = 10 * 1024 * 1024;
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function KnowledgeSection() {
+  const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setDocs(await invoke<KnowledgeDoc[]>("list_knowledge_docs"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const onFileChosen = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_KNOWLEDGE_FILE_BYTES) {
+      setMessage("文件过大，请控制在 10 MB 以内。");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    setIsUploading(true);
+    setMessage(null);
+    try {
+      const content = await file.text();
+      await invoke("add_knowledge_doc", { name: file.name, content });
+      await load();
+      setMessage(`已导入 ${file.name}。`);
+    } catch (error) {
+      setMessage(`导入失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const remove = async (name: string) => {
+    try {
+      await invoke("remove_knowledge_doc", { name });
+      await load();
+      setMessage(`已删除 ${name}。`);
+    } catch (error) {
+      setMessage(`删除失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  return (
+    <section className="settings-section">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="section-title">项目知识库</h2>
+          <p className="mt-1 mb-0 max-w-[560px] text-xs leading-relaxed text-white/44">
+            上传简历、项目文档、实习自评等 Markdown / 文本文件。面试被问到项目或实习时，助手会从这些资料里检索作答，只引用你提供的材料，不编造。
+          </p>
+        </div>
+        <span className={`mt-0.5 text-[11px] ${docs.length > 0 ? "text-[#b9c6cc]" : "text-white/32"}`}>
+          {docs.length > 0 ? `${docs.length} 个文档` : "空"}
+        </span>
+      </div>
+
+      {docs.length > 0 && (
+        <ul className="mb-4 space-y-1.5">
+          {docs.map((doc) => (
+            <li
+              key={doc.name}
+              className="flex items-center justify-between gap-3 rounded-md bg-white/[0.03] px-3 py-2"
+            >
+              <div className="min-w-0">
+                <p className="m-0 truncate text-[13px] text-white/80">{doc.name}</p>
+                <p className="m-0 text-[11px] text-white/38">
+                  {formatFileSize(doc.size)} · {doc.chunkCount} 个片段
+                </p>
+              </div>
+              <button className={SECONDARY_BUTTON} onClick={() => void remove(doc.name)}>
+                删除
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".md,.txt,.markdown,text/markdown,text/plain"
+        className="hidden"
+        onChange={(event) => void onFileChosen(event)}
+      />
+
+      <div className="flex items-center gap-2">
+        <button
+          className={PRIMARY_BUTTON}
+          disabled={isUploading}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {isUploading ? "导入中…" : "上传文档"}
+        </button>
+      </div>
+
+      {message && <p className="mt-2 mb-0 text-xs text-white/60">{message}</p>}
     </section>
   );
 }
@@ -731,6 +855,7 @@ export function SettingsContent({
           kind="llm"
           onSaved={() => void loadOnboardingStatus()}
         />
+        <KnowledgeSection />
         <WebSearchSection />
         <DictationSection />
         <DiagnosticsSection />

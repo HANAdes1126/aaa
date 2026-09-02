@@ -2,6 +2,7 @@ mod agent_tool_loop;
 pub mod assistant_service;
 mod coach_agent;
 pub mod document_service;
+pub mod knowledge;
 pub mod prompt_orchestrator;
 pub mod report_service;
 pub mod screen_capture;

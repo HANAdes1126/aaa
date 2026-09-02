@@ -74,6 +74,7 @@ pub async fn ask_assistant_with_question(
             .collect::<String>()
             .replace('\n', " ")
     ));
+    let question = attach_knowledge_evidence(&question);
     run_completion(app, system_prompt, question).await
 }
 
@@ -103,6 +104,7 @@ pub async fn complete_assistant_with_question(
             .replace('\n', " ")
     ));
 
+    let question = attach_knowledge_evidence(&question);
     run_completion_return(app, run_id, system_prompt, question).await
 }
 
@@ -118,7 +120,9 @@ pub async fn complete_voice_ask(
     let selected_text = selected_text
         .as_deref()
         .and_then(|text| normalize_optional(text, MAX_SELECTED_TEXT_CHARS));
-    let messages = build_voice_ask_messages(selected_text.as_deref(), &turns, &question);
+    let question_with_evidence = attach_knowledge_evidence(&question);
+    let messages =
+        build_voice_ask_messages(selected_text.as_deref(), &turns, &question_with_evidence);
     let system_prompt = format!(
         "{}\n\n{}",
         build_system_prompt(AssistantMode::General),
@@ -220,6 +224,16 @@ fn normalize_optional(text: &str, max_chars: usize) -> Option<String> {
 
 fn truncate_chars(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
+}
+
+/// Retrieves matching knowledge-base passages for the question and appends them
+/// as an `<evidence>` block, so the grounding rules have real material to cite.
+/// Returns the question unchanged when nothing clears the relevance bar.
+fn attach_knowledge_evidence(question: &str) -> String {
+    match super::knowledge::retrieve_context(question, 4) {
+        Some(evidence) => format!("{question}\n\n<evidence>\n{evidence}\n</evidence>"),
+        None => question.to_string(),
+    }
 }
 
 async fn run_completion(
