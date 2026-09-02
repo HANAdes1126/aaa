@@ -300,10 +300,10 @@ fn extract_rgba(image: &core_graphics::image::CGImage) -> Result<Vec<u8>, String
         bitmap_info,
     );
 
-    // CoreGraphics draws with the origin at bottom-left, but the captured
-    // CGImage uses top-left; flip the CTM so the pixels come out upright.
-    context.translate(0.0, height as f64);
-    context.scale(1.0, -1.0);
+    // 直接绘制即可，不要加任何 CTM 翻转。CGDisplayCreateImage 返回的 CGImage
+    // 与 CGBitmapContext 的内存都是 top-down 存储，二者方向天然一致。这里之前
+    // 加的 translate + scale(1, -1) 反而把图上下颠倒（用户实测：题面被 180° 旋转
+    // 再镜像，即纯垂直翻转），vision 模型读不出反字，只能瞎编一道题。
     context.draw_image(
         CGRect::new(
             &CGPoint::new(0.0, 0.0),
