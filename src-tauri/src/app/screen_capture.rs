@@ -106,7 +106,9 @@ pub fn capture_screen(app: AppHandle) -> Result<CaptureResult, String> {
         ));
 
         let rgba = extract_rgba(&image)?;
+        save_raw_screenshot(width, height, &rgba);
         let jpeg = encode_optimized_jpeg(width, height, rgba)?;
+        save_sent_screenshot(width, height, &jpeg);
         let _ = crate::debug_log::append(&format!(
             "[screen-capture] optimized jpeg_bytes={}",
             jpeg.len()
@@ -361,6 +363,68 @@ fn encode_optimized_jpeg(width: usize, height: usize, rgba: Vec<u8>) -> Result<V
     }
 
     Err("截图体积过大，无法压缩到目标上限。".to_string())
+}
+
+/// 诊断用：把每次截图落盘，方便自查「到底截到了什么」。目录为
+/// `~/.meetly/screenshots/`，每次截图产生两张图：
+/// - `raw-<ts>-<W>x<H>.png`：原始全屏截图（无损、未缩放），用于判断是否被
+///   Meetly 自身窗口遮挡、或是否截到了壁纸/空内容。
+/// - `sent-<ts>-<W>x<H>.jpg`：经过缩放/JPEG 压缩后真正发给模型的那张，用于
+///   判断模型看到的文字是否清晰可读。
+#[cfg(target_os = "macos")]
+fn screenshot_debug_dir() -> Option<std::path::PathBuf> {
+    let home = dirs::home_dir()?;
+    let dir = home.join(".meetly").join("screenshots");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+#[cfg(target_os = "macos")]
+fn debug_timestamp() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
+}
+
+#[cfg(target_os = "macos")]
+fn save_raw_screenshot(width: usize, height: usize, rgba: &[u8]) {
+    let Some(dir) = screenshot_debug_dir() else {
+        let _ = crate::debug_log::append("[screen-capture] debug: cannot create screenshots dir");
+        return;
+    };
+    let path = dir.join(format!("raw-{}-{}x{}.png", debug_timestamp(), width, height));
+    if let Some(img) = image::RgbaImage::from_raw(width as u32, height as u32, rgba.to_vec()) {
+        if let Err(error) = img.save(&path) {
+            let _ = crate::debug_log::append(&format!(
+                "[screen-capture] debug: raw save failed error={error}"
+            ));
+            return;
+        }
+    }
+    let _ = crate::debug_log::append(&format!(
+        "[screen-capture] debug: raw saved path={}",
+        path.display()
+    ));
+}
+
+#[cfg(target_os = "macos")]
+fn save_sent_screenshot(width: usize, height: usize, jpeg: &[u8]) {
+    let Some(dir) = screenshot_debug_dir() else {
+        return;
+    };
+    let path = dir.join(format!("sent-{}-{}x{}.jpg", debug_timestamp(), width, height));
+    if let Err(error) = std::fs::write(&path, jpeg) {
+        let _ = crate::debug_log::append(&format!(
+            "[screen-capture] debug: sent save failed error={error}"
+        ));
+        return;
+    }
+    let _ = crate::debug_log::append(&format!(
+        "[screen-capture] debug: sent saved path={} bytes={}",
+        path.display(),
+        jpeg.len()
+    ));
 }
 
 fn scaled_dimensions(width: usize, height: usize, max_side: usize) -> (u32, u32) {

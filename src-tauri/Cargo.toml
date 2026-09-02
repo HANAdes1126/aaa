@@ -22,7 +22,7 @@ dotenvy = "0.15"
 futures-util = "0.3"
 handy-keys = "0.3.0"
 hound = "3.5"
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 pdf-extract = "0.12"
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
 ringbuf = "0.4"
