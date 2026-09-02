@@ -1,6 +1,7 @@
-import { useCallback, useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useRef } from "react";
 import { buildAgentChatContext, buildAgentChatHistory, resolveAgentChatMessage } from "./agentChat";
-import { createId, debugLog, safeInvoke } from "./platform";
+import { createId, debugLog, isTauriRuntime, safeInvoke } from "./platform";
 import type { AgentChatTurn, AssistantSuggestion } from "./types";
 import type { MeetlyState } from "./useMeetlyState";
 import type { AgentRuntimeActions } from "./useAgentRuntime";
@@ -108,12 +109,11 @@ export function useAssistantAsk(
   const askScreenshot = useCallback(async (question?: string) => {
     if (ctx.isAsking) return;
 
-    const resolved = question?.trim() || "帮我看看屏幕上的内容";
+    const resolved = question?.trim() || "帮我分析这道题并给出答案";
     ctx.setIsAsking(true);
     ctx.setAssistantError(null);
     ctx.setAssistantSuggestion(null);
     ctx.setAssistantDraft("");
-    await windowActions.setPanel("assistant");
 
     const askId = createId("shot");
     const createdAt = Date.now();
@@ -129,6 +129,12 @@ export function useAssistantAsk(
     agent.recordManualAskStarted(askId);
 
     try {
+      // 截屏前先收起面板，避免 Meetly 窗口挡住屏幕上的题目
+      if (ctx.openPanel !== null) {
+        await windowActions.setPanel(null);
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+
       const capture = await safeInvoke<{
         imageBase64: string;
         mimeType: string;
@@ -151,6 +157,13 @@ export function useAssistantAsk(
         throw new Error("未能分析截图。");
       }
 
+      // 分析完成后确保窗口可见，再展开面板展示答案
+      if (ctx.isHidden) {
+        ctx.setIsHidden(false);
+        await safeInvoke("set_island_visible", { visible: true });
+      }
+      await windowActions.setPanel("assistant");
+
       setChatTurns(ctx, ctx.agentChatTurnsRef.current.map((turn) =>
         turn.id === askId ? { ...turn, suggestion, error: null } : turn
       ));
@@ -169,6 +182,32 @@ export function useAssistantAsk(
       ));
     }
   }, [agent, ctx, windowActions]);
+
+  // 全局快捷键触发时，无需用户输入，直接用默认「解题」意图跑一遍截屏 → 分析 → 展示
+  const askScreenshotRef = useRef(askScreenshot);
+  askScreenshotRef.current = askScreenshot;
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    listen("screenshot_shortcut_pressed", () => {
+      void askScreenshotRef.current();
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     const handleAskShortcut = (event: KeyboardEvent) => {

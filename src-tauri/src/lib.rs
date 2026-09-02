@@ -97,6 +97,7 @@ pub fn run() {
             window::setup_island_window(app)?;
             providers::dev_env::seed_from_dotenv_if_missing(app.handle());
             dictation::initialize(app.handle());
+            app::screen_capture::register_screenshot_shortcut(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())
