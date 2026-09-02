@@ -78,6 +78,7 @@ export function useMeetlyState() {
   const autoAssistHintRef = useRef<AutoAssistHint | null>(null);
   const prefetchCacheRef = useRef<PrefetchCache | null>(null);
   const prefetchInFlightRef = useRef<PrefetchInFlight | null>(null);
+  const prefetchLastAtRef = useRef(0);
   const recentQuestionCandidatesRef = useRef<QuestionCandidate[]>([]);
   const lastHintShownAtRef = useRef(0);
   const hintExpiryTimerRef = useRef<number | null>(null);
@@ -169,6 +170,7 @@ export function useMeetlyState() {
     autoAssistHintRef,
     prefetchCacheRef,
     prefetchInFlightRef,
+    prefetchLastAtRef,
     recentQuestionCandidatesRef,
     lastHintShownAtRef,
     hintExpiryTimerRef,

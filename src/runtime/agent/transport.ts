@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { resolveCoachMode } from "../../app/speculativePrefetch";
 import type { AssistantSuggestion, CoachToolTrace } from "../../app/types";
 import type { AgentPrompt } from "./prompt";
 
@@ -16,14 +17,39 @@ export type AgentTransportCallbacks = {
   onToolTrace?: (trace: CoachToolTrace) => void;
 };
 
-export function createPiCoachTransport(): AgentTransport {
+/**
+ * 推测性预取缓存读取入口：给定最终问题文本，返回可直接复用的建议（无则 null）。
+ * 由 `useAgentRuntime` 注入，内部负责 TTL 与相似度/极性守卫，命中后消费缓存。
+ */
+export type PrefetchProvider = {
+  lookup(questionText: string): AssistantSuggestion | null;
+  inflight(questionText: string): Promise<AssistantSuggestion | null> | null;
+};
+
+export function createPiCoachTransport(opts?: { prefetch?: PrefetchProvider }): AgentTransport {
+  const prefetch = opts?.prefetch;
+
   return {
     async complete(prompt, callbacks) {
-      const mode = prompt.snapshot.sessionKind === "remote" || prompt.snapshot.sessionKind === "in_person"
-        ? "meeting"
-        : prompt.snapshot.perspective === "interviewer"
-          ? "interviewer"
-          : "interview";
+      // 先尝试复用推测性预取：已完成的结果直接返回；仍在途的 await 同一份
+      // 生成（避免另发一版重复请求），均未命中才走全新生成。
+      const evidence = prompt.wake.evidence[0] ?? "";
+      if (prefetch && evidence) {
+        const cached = prefetch.lookup(evidence);
+        if (cached) {
+          return cached;
+        }
+
+        const inflight = prefetch.inflight(evidence);
+        if (inflight) {
+          const awaited = await inflight;
+          if (awaited) {
+            return awaited;
+          }
+        }
+      }
+
+      const mode = resolveCoachMode(prompt.snapshot.sessionKind, prompt.snapshot.perspective);
       const suggestion = await runWithOneTimeoutRetry(
         () => invoke<AssistantSuggestion>("complete_assistant_with_question", {
           mode,

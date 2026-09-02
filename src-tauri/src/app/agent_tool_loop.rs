@@ -193,6 +193,11 @@ struct CompletionTuning {
     /// Lower for voice so the first tokens are more deterministic and the
     /// model commits to the JSON shape faster.
     temperature: f32,
+    /// Skip the model's reasoning/thinking step. A live voice answer pays a
+    /// 6-7× TTFT penalty for a reasoning pass it does not need, so every
+    /// voice workflow forces this on; text/prefetch keeps reasoning for the
+    /// deeper answers that benefit from it.
+    disable_reasoning: bool,
 }
 
 impl CompletionTuning {
@@ -201,6 +206,7 @@ impl CompletionTuning {
             stream: true,
             max_tokens: 350,
             temperature: 0.2,
+            disable_reasoning: true,
         }
     }
 
@@ -209,6 +215,7 @@ impl CompletionTuning {
             stream: false,
             max_tokens: 0,
             temperature: 0.3,
+            disable_reasoning: false,
         }
     }
 }
@@ -272,10 +279,20 @@ pub(crate) async fn complete(
             &chrono::Local::now().format("%Y-%m-%d").to_string(),
         )
     };
+    let system_prompt_chars = system_prompt.chars().count();
+    // The system prompt is pinned as the FIRST message and is byte-stable for a
+    // given mode + tool-set. That keeps it in the provider's context-cache
+    // prefix (DeepSeek / SiliconFlow cache the leading tokens automatically), so
+    // repeated turns re-use the cached prefill instead of re-processing it —
+    // lower TTFT and cheaper input on every follow-up. Keep it first and stable.
     let mut request_messages = vec![json!({
         "role": "system",
         "content": system_prompt,
     })];
+    let _ = crate::debug_log::append(&format!(
+        "[agent-tool-loop] system prompt trace={} chars={} (cache prefix)",
+        trace_id, system_prompt_chars
+    ));
     request_messages.extend(
         messages
             .into_iter()
@@ -297,7 +314,6 @@ pub(crate) async fn complete(
             &request_messages,
             &tools,
             force_search,
-            search_requirement.is_required(),
             &workflow.tuning(),
         )
         .await
@@ -499,7 +515,6 @@ pub(crate) async fn complete_vision(
         &request_messages,
         &[],
         false,
-        false,
         &CompletionTuning::default_text(),
     )
     .await
@@ -537,12 +552,11 @@ async fn request_completion(
     messages: &[Value],
     tools: &[Value],
     force_search: bool,
-    disable_reasoning: bool,
     tuning: &CompletionTuning,
 ) -> Result<CompletionResponse, String> {
     let started_at = unix_time_ms();
     let mut body = completion_body(model, messages, tools, force_search, tuning);
-    apply_provider_request_options(base_url, disable_reasoning, &mut body);
+    apply_provider_request_options(base_url, model, tuning.disable_reasoning, &mut body);
 
     // For voice (tuning.stream = true) the path is straightforward: the
     // server gives us SSE deltas. For text the legacy path is kept (non-stream
@@ -702,12 +716,45 @@ fn completion_from_sse(payload: &str) -> Result<CompletionResponse, String> {
     })
 }
 
-fn apply_provider_request_options(base_url: &str, disable_reasoning: bool, body: &mut Value) {
-    if base_url.contains("deepseek") && disable_reasoning {
-        body["thinking"] = json!({ "type": "disabled" });
-    } else if base_url.contains("siliconflow") {
-        body["enable_thinking"] = json!(false);
+/// Applies provider-specific reasoning/thinking controls to the request body.
+///
+/// The reasoning knob is per-provider because each OpenAI-compatible vendor
+/// spells "skip the thinking step" differently — and a provider that does not
+/// understand a reasoning param rejects the WHOLE request with a 400, so we
+/// only emit the field for vendors/models we know accept it. `disable_reasoning`
+/// is driven by `CompletionTuning` (voice workflows on, text off); this function
+/// only decides HOW to express that intent for the given endpoint.
+fn apply_provider_request_options(base_url: &str, model: &str, disable_reasoning: bool, body: &mut Value) {
+    if !disable_reasoning {
+        return;
     }
+    let base = base_url.to_lowercase();
+    let model = model.to_lowercase();
+    if base.contains("deepseek") {
+        // DeepSeek thinking-mode models (deepseek-chat V3.1+ / reasoner) accept
+        // `thinking: { type: "disabled" }` to skip the reasoning pass entirely.
+        body["thinking"] = json!({ "type": "disabled" });
+    } else if base.contains("siliconflow") {
+        // SiliconFlow Qwen3 / GLM reasoning models accept `enable_thinking: false`.
+        body["enable_thinking"] = json!(false);
+    } else if is_openai_reasoner(&model) {
+        // OpenAI o-series / gpt-5 reasoners: lowest valid effort keeps TTFT low.
+        body["reasoning_effort"] = json!("low");
+    }
+    // Unknown OpenAI-compatible endpoints: emit nothing — an unrecognized
+    // reasoning field would reject the request, which is worse than just paying
+    // the (rare) reasoning cost on a provider we don't recognize.
+}
+
+/// True when the model id names a known OpenAI reasoning family that accepts a
+/// `reasoning_effort` knob. Mirrors Cluely's `getOpenAiReasoningEffort` shape:
+/// o-series and gpt-5.x are reasoners; gpt-4/gpt-3.5 are not (they reject the
+/// param), which the explicit prefixes already exclude.
+fn is_openai_reasoner(model: &str) -> bool {
+    model.starts_with("o1")
+        || model.starts_with("o3")
+        || model.starts_with("o4")
+        || model.starts_with("gpt-5")
 }
 
 fn completion_body(
@@ -1248,6 +1295,7 @@ mod tests {
         );
         apply_provider_request_options(
             "https://api.deepseek.com/chat/completions",
+            "deepseek-chat",
             true,
             &mut body,
         );
@@ -1264,10 +1312,38 @@ mod tests {
         );
         apply_provider_request_options(
             "https://api.deepseek.com/chat/completions",
+            "deepseek-chat",
             false,
             &mut ordinary_body,
         );
         assert!(ordinary_body.get("thinking").is_none());
+    }
+
+    #[test]
+    fn voice_tuning_disables_reasoning_but_text_keeps_it() {
+        assert!(CompletionTuning::voice().disable_reasoning);
+        assert!(!CompletionTuning::default_text().disable_reasoning);
+    }
+
+    #[test]
+    fn reasoning_options_apply_per_provider_only_when_requested() {
+        // SiliconFlow: enable_thinking only when disable_reasoning is set.
+        let mut sf = completion_body("model", &[], &[], false, &CompletionTuning::default_text());
+        apply_provider_request_options("https://api.siliconflow.cn/v1/chat/completions", "qwen3", false, &mut sf);
+        assert!(sf.get("enable_thinking").is_none());
+
+        let mut sf_on = completion_body("model", &[], &[], false, &CompletionTuning::default_text());
+        apply_provider_request_options("https://api.siliconflow.cn/v1/chat/completions", "qwen3", true, &mut sf_on);
+        assert_eq!(sf_on["enable_thinking"], json!(false));
+
+        // OpenAI reasoner: reasoning_effort low; non-reasoner: nothing emitted.
+        let mut o1 = completion_body("model", &[], &[], false, &CompletionTuning::default_text());
+        apply_provider_request_options("https://api.openai.com/v1/chat/completions", "o3-mini", true, &mut o1);
+        assert_eq!(o1["reasoning_effort"], json!("low"));
+
+        let mut gpt4 = completion_body("model", &[], &[], false, &CompletionTuning::default_text());
+        apply_provider_request_options("https://api.openai.com/v1/chat/completions", "gpt-4o", true, &mut gpt4);
+        assert!(gpt4.get("reasoning_effort").is_none());
     }
 
     #[test]

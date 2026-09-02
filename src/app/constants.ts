@@ -21,5 +21,11 @@ export const AUTO_ASSIST_HINT_COOLDOWN_MS = 10_000;
 export const AUTO_ASSIST_DEDUPE_WINDOW_MS = 45_000;
 export const AUTO_ASSIST_CACHE_TTL_MS = 30_000;
 export const AUTO_ASSIST_PREFETCH_ENABLED = true;
+// 推测性预取复用阈值：最终问题与预取问题的相似度达到该值才复用缓存答案。
+export const SPECULATIVE_REUSE_THRESHOLD = 0.78;
+// 极性翻转（否定/反义词替换）时把相似度压制到该值以下，避免复用语义相反的答案。
+export const SPECULATIVE_FLIP_CAP = 0.55;
+// 单次预取请求的兜底超时，略低于教练的 10s，避免在途 await 与教练重试叠加成超长等待。
+export const SPECULATIVE_PREFETCH_TIMEOUT_MS = 8_000;
 export const COACH_HEARTBEAT_MS = 10_000;
 export const COACH_MAX_MESSAGES = 8;

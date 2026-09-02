@@ -151,6 +151,8 @@ export type PrefetchInFlight = {
   questionText: string;
   confidence: number;
   startedAt: number;
+  // 在途请求的 promise，供教练 transport 复用（await 同一份生成而非另发一版）。
+  promise: Promise<AssistantSuggestion | null>;
 };
 
 export type PrefetchStatus = "idle" | "prefetching" | "ready" | "error";

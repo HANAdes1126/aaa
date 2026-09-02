@@ -8,9 +8,12 @@ import {
   createPiCoachTransport,
   detectSttWake,
   type AgentRuntimeCallbacks,
+  type PrefetchProvider,
   type WakeEvent,
 } from "../runtime/agent";
 import { debugLog } from "./platform";
+import { matchPrefetchCache, speculativeSimilarity } from "./speculativePrefetch";
+import { SPECULATIVE_REUSE_THRESHOLD } from "./constants";
 import type {
   AudioSource,
   CoachMessage,
@@ -40,7 +43,7 @@ export function useAgentRuntime(ctx: MeetlyState) {
   if (!runtimeRef.current) {
     runtimeRef.current = new AgentRuntime(
       contextRef.current,
-      createPiCoachTransport(),
+      createPiCoachTransport({ prefetch: buildPrefetchProvider(ctx) }),
       buildCallbacks(ctx, journalRef.current)
     );
   }
@@ -237,6 +240,35 @@ export function useAgentRuntime(ctx: MeetlyState) {
     recordSessionStarted,
     wakeEnter,
     wakeSessionStart,
+  };
+}
+
+function buildPrefetchProvider(ctx: MeetlyState): PrefetchProvider {
+  return {
+    lookup(questionText: string) {
+      const cache = ctx.prefetchCacheRef.current;
+      if (!cache) return null;
+
+      const suggestion = matchPrefetchCache(cache, questionText);
+      if (!suggestion) return null;
+
+      // 命中即消费，避免同一份缓存被后续不同问题误复用。
+      ctx.prefetchCacheRef.current = null;
+      ctx.setPrefetchStatus("idle");
+      debugLog(
+        `[prefetch] cache hit candidate=${cache.candidateId} chars=${suggestion.answer.length}`
+      );
+      return suggestion;
+    },
+    inflight(questionText: string) {
+      const inFlight = ctx.prefetchInFlightRef.current;
+      if (!inFlight) return null;
+      if (speculativeSimilarity(inFlight.questionText, questionText) < SPECULATIVE_REUSE_THRESHOLD) {
+        return null;
+      }
+      debugLog(`[prefetch] reusing in-flight candidate=${inFlight.candidateId}`);
+      return inFlight.promise;
+    },
   };
 }
 

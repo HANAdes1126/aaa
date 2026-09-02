@@ -16,7 +16,7 @@ export type {
   CoachSupersedeReason,
 } from "./protocol";
 export { AgentRuntime, type AgentRuntimeCallbacks } from "./runtime";
-export { createPiCoachTransport, type AgentTransport } from "./transport";
+export { createPiCoachTransport, type AgentTransport, type PrefetchProvider } from "./transport";
 export {
   createEnterWake,
   createSessionStartWake,

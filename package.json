@@ -16,6 +16,7 @@
     "test:dictation": "tsx scripts/test-dictation-state.ts",
     "test:microphone-clip": "tsx scripts/test-microphone-clip.ts",
     "test:session-audio": "tsx scripts/test-session-audio.ts",
+    "test:speculative": "tsx scripts/test-speculative-prefetch.ts",
     "test:voice-ask": "tsx scripts/test-voice-ask-state.ts",
     "test:voice-overlay": "tsx scripts/test-voice-overlay-presentation.ts",
     "ghost:preview": "node scripts/build-ghost-preview.mjs",
