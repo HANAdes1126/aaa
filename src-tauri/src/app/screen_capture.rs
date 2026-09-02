@@ -69,11 +69,21 @@ pub struct CaptureResult {
 pub fn capture_screen() -> Result<CaptureResult, String> {
     #[cfg(target_os = "macos")]
     {
-        ensure_screen_capture_permission()?;
+        // Best-effort kick of the TCC prompt on first run; a false preflight
+        // is NOT a hard error here (see ensure_screen_capture_permission).
+        ensure_screen_capture_permission();
 
         let image = capture_fullscreen_image()?;
         let width = image.width();
         let height = image.height();
+        if width == 0 || height == 0 {
+            return Err(
+                "未能截取屏幕：CGWindowListCreateImage 返回空图像。\
+                 请确认「系统设置 → 隐私与安全性 → 录屏与系统录音」已勾选 Meetly，\
+                 然后 **完全退出并重新打开 Meetly**（macOS 的 TCC 缓存在进程退出前不会刷新）。"
+                    .to_string(),
+            );
+        }
         let _ = crate::debug_log::append(&format!(
             "[screen-capture] captured {}x{}",
             width, height
@@ -126,10 +136,11 @@ pub async fn analyze_screenshot(
     .await
 }
 
-/// Global shortcut that triggers the screenshot → solve loop. On macOS this
-/// maps to Cmd+Shift+A; the frontend listens for the emitted event, captures
-/// the screen, analyzes the on-screen question, and shows the answer.
-const SCREENSHOT_SHORTCUT: &str = "CmdOrCtrl+Shift+A";
+/// Global shortcut that triggers the screenshot → solve loop. We deliberately
+/// pick a 3-modifier chord here: `Cmd+Shift+<letter>` is a hot conflict zone
+/// (macOS itself uses `Cmd+Shift+3/4/5` for screenshot, and many third-party
+/// tools grab the rest). Adding `Option` keeps it out of everyone's way.
+const SCREENSHOT_SHORTCUT: &str = "CmdOrCtrl+Alt+Shift+K";
 
 /// Registers the global screenshot shortcut. Pressing it emits
 /// `screenshot_shortcut_pressed`, which the island window handles by running
@@ -171,23 +182,28 @@ fn strip_data_url_prefix(value: &str) -> &str {
 fn image_base64_unused_marker() {}
 
 #[cfg(target_os = "macos")]
-fn ensure_screen_capture_permission() -> Result<(), String> {
+fn ensure_screen_capture_permission() {
+    // Note: CGPreflightScreenCaptureAccess() caches the TCC decision per-process.
+    // Even after the user toggles "Screen Recording" on in System Settings, this
+    // call can still return false until *this* process is restarted. So we
+    // deliberately do *not* treat `preflight == false` as a hard error here —
+    // we just kick off CGRequestScreenCaptureAccess so macOS shows the prompt
+    // on first run, then let the actual capture call below report the truth.
     extern "C" {
         fn CGPreflightScreenCaptureAccess() -> bool;
         fn CGRequestScreenCaptureAccess() -> bool;
     }
 
     if unsafe { CGPreflightScreenCaptureAccess() } {
-        return Ok(());
+        return;
     }
 
-    // First-run: trigger the system prompt. The user must grant access in
-    // System Settings → Privacy & Security → Screen Recording, then retry.
-    let _ = unsafe { CGRequestScreenCaptureAccess() };
-    let _ = crate::debug_log::append(
-        "[screen-capture] screen recording permission not granted; requested once",
-    );
-    Err("请在系统设置 → 隐私与安全性 → 屏幕录制 中允许 Meetly，然后重试。".to_string())
+    let granted = unsafe { CGRequestScreenCaptureAccess() };
+    let _ = crate::debug_log::append(&format!(
+        "[screen-capture] screen recording permission requested granted={granted} \
+         (if this is the first run, grant in System Settings → Privacy & Security → \
+         Screen Recording, then **restart Meetly**)"
+    ));
 }
 
 #[cfg(target_os = "macos")]
@@ -205,7 +221,10 @@ fn capture_fullscreen_image() -> Result<core_graphics::image::CGImage, String> {
         kCGWindowImageDefault,
     )
     .ok_or_else(|| {
-        "截图失败：可能尚未授予屏幕录制权限，或当前屏幕内容无法捕获。".to_string()
+        "CGWindowListCreateImage 返回 None — 通常意味着进程尚未获得 \
+         「屏幕录制」权限。请在「系统设置 → 隐私与安全性 → 录屏与系统录音」中勾选 Meetly，\
+         然后 **完全退出并重新打开 Meetly**（macOS 不会自动刷新 TCC 缓存）。"
+            .to_string()
     })
 }
 

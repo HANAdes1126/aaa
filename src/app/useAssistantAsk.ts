@@ -129,11 +129,13 @@ export function useAssistantAsk(
     agent.recordManualAskStarted(askId);
 
     try {
-      // 截屏前先收起面板，避免 Meetly 窗口挡住屏幕上的题目
-      if (ctx.openPanel !== null) {
-        await windowActions.setPanel(null);
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
+      // Do NOT collapse / reorder any panels here — doing so used to shrink
+      // Meetly down to the floating island mid-capture, which the user found
+      // jarring and inconsistent with the camera button in the workspace.
+      // The right thing is to capture whatever is on screen (Meetly's own
+      // window will be in the frame, but most questions are centred on the
+      // display and the model can ignore the surrounding chrome) and trust
+      // the panel state the user already chose.
 
       const capture = await safeInvoke<{
         imageBase64: string;
@@ -157,12 +159,13 @@ export function useAssistantAsk(
         throw new Error("未能分析截图。");
       }
 
-      // 分析完成后确保窗口可见，再展开面板展示答案
-      if (ctx.isHidden) {
-        ctx.setIsHidden(false);
-        await safeInvoke("set_island_visible", { visible: true });
+      // Only flip to the assistant panel if there is no panel open yet — i.e.
+      // the user triggered this from the global hotkey with everything
+      // collapsed. If they already had the workspace / another panel open,
+      // leave it as-is so we don't yank focus.
+      if (ctx.openPanel === null) {
+        await windowActions.setPanel("assistant");
       }
-      await windowActions.setPanel("assistant");
 
       setChatTurns(ctx, ctx.agentChatTurnsRef.current.map((turn) =>
         turn.id === askId ? { ...turn, suggestion, error: null } : turn
