@@ -208,20 +208,18 @@ fn ensure_screen_capture_permission() {
 
 #[cfg(target_os = "macos")]
 fn capture_fullscreen_image() -> Result<core_graphics::image::CGImage, String> {
-    use core_graphics::display::CGRectNull;
-    use core_graphics::window::{
-        create_image, kCGNullWindowID, kCGWindowImageDefault, kCGWindowListOptionOnScreenOnly,
-    };
+    use core_graphics::display::CGDisplay;
 
-    let bounds = unsafe { CGRectNull };
-    create_image(
-        bounds,
-        kCGWindowListOptionOnScreenOnly,
-        kCGNullWindowID,
-        kCGWindowImageDefault,
-    )
-    .ok_or_else(|| {
-        "CGWindowListCreateImage 返回 None — 通常意味着进程尚未获得 \
+    // CGDisplayCreateImage snapshots the *display* (every pixel, including all
+    // windows on top of it). The alternative path we previously used —
+    // CGWindowListCreateImage(CGRectNull, kCGWindowListOptionOnScreenOnly,
+    // kCGNullWindowID, …) — silently degrades on macOS 13+ to "capture the
+    // desktop region not covered by any window", i.e. just the wallpaper.
+    // Sticking with CGDisplayCreateImage is the documented way to get every
+    // window content + the desktop behind them in a single image.
+    let display = CGDisplay::main();
+    display.image().ok_or_else(|| {
+        "CGDisplayCreateImage 返回 None — 通常意味着进程尚未获得 \
          「屏幕录制」权限。请在「系统设置 → 隐私与安全性 → 录屏与系统录音」中勾选 Meetly，\
          然后 **完全退出并重新打开 Meetly**（macOS 不会自动刷新 TCC 缓存）。"
             .to_string()
