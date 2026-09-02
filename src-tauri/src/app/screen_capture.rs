@@ -14,13 +14,20 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 /// Longest side of the re-encoded image in pixels. Anything larger is
-/// downscaled proportionally before JPEG encoding, keeping the payload small
-/// enough for OpenAI-compatible `image_url` requests.
-const MAX_IMAGE_SIDE: usize = 1280;
-/// Hard ceiling on the encoded JPEG byte size. Encoding retries at lower
-/// quality until the payload fits; if it still overflows the pipeline errors
-/// out instead of silently sending an oversized request.
-const MAX_IMAGE_BYTES: usize = 3_500_000;
+/// downscaled proportionally before JPEG encoding. Set to 1920 (rather than
+/// the more common 1280) so dense text — Chinese + English at ~12–14 px in a
+/// browser — stays legible to the vision model after the rescale. A 14" MBP
+/// at 3024×1964 downscales with a 0.63 ratio, so 14 px CJK → ~9 px instead of
+/// the 6 px that the old 1280 ceiling produced (where the model could only
+/// read the IDE code block, not the problem statement, and started
+/// hallucinating).
+const MAX_IMAGE_SIDE: usize = 1920;
+/// Hard ceiling on the encoded JPEG byte size. Bumped from 3.5 MB → 8 MB so
+/// the encoder can keep quality in the 78–92 band (text needs >= 80 to stay
+/// readable; dropping to 60 or 40 produces colour-fringed character edges
+/// that the model reads as noise). 8 MB is comfortably within the image-input
+/// budget of GPT-4o, Claude 3.5 Sonnet and DeepSeek V4 Pro.
+const MAX_IMAGE_BYTES: usize = 8_000_000;
 
 /// Anti-injection contract applied to every screenshot analysis. The model
 /// sees a screen full of arbitrary text, some of which may itself be a prompt
@@ -320,6 +327,14 @@ fn extract_rgba(image: &core_graphics::image::CGImage) -> Result<Vec<u8>, String
 
 /// Downscales and re-encodes the screenshot as a JPEG, retrying at lower
 /// quality until it fits under `MAX_IMAGE_BYTES`.
+///
+/// Quality ladder is biased **high** (92 / 85 / 78) because text-on-screen
+/// screenshots degrade badly below ~80 — characters get colour fringing at
+/// the edges and the vision model starts ignoring them. For comparison the
+/// previous ladder `[85, 60, 40]` would happily emit a 40-quality frame
+/// whenever the screenshot was dense (Chinese text + IDE), which the model
+/// could parse visually but not lexically — i.e. it could see "there is
+/// text here" but not read it.
 #[cfg(target_os = "macos")]
 fn encode_optimized_jpeg(width: usize, height: usize, rgba: Vec<u8>) -> Result<Vec<u8>, String> {
     let source = image::RgbaImage::from_raw(width as u32, height as u32, rgba)
@@ -332,7 +347,7 @@ fn encode_optimized_jpeg(width: usize, height: usize, rgba: Vec<u8>) -> Result<V
         image::imageops::resize(&source, nw, nh, image::imageops::FilterType::Triangle)
     };
 
-    for quality in [85u8, 60, 40] {
+    for quality in [92u8, 85, 78] {
         let mut out = Vec::new();
         {
             let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality);
@@ -365,22 +380,22 @@ mod tests {
 
     #[test]
     fn scaled_dimensions_keep_small_images() {
-        assert_eq!(scaled_dimensions(800, 600, 1280), (800, 600));
-        assert_eq!(scaled_dimensions(1280, 720, 1280), (1280, 720));
+        assert_eq!(scaled_dimensions(1600, 1200, 1920), (1600, 1200));
+        assert_eq!(scaled_dimensions(1920, 1080, 1920), (1920, 1080));
     }
 
     #[test]
     fn scaled_dimensions_shrink_long_side() {
-        let (w, h) = scaled_dimensions(2560, 1440, 1280);
-        assert_eq!(w, 1280);
-        assert_eq!(h, 720);
+        let (w, h) = scaled_dimensions(3024, 1964, 1920);
+        assert_eq!(w, 1920);
+        assert_eq!(h, 1247);
     }
 
     #[test]
     fn scaled_dimensions_never_collapse() {
-        let (w, h) = scaled_dimensions(4000, 10, 1280);
-        assert_eq!(w, 1280);
-        assert_eq!(h, 3);
+        let (w, h) = scaled_dimensions(4000, 10, 1920);
+        assert_eq!(w, 1920);
+        assert_eq!(h, 5);
     }
 
     #[test]
