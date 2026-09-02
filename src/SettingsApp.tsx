@@ -11,12 +11,13 @@ import type {
 import { DEFAULT_DICTATION_SETTINGS } from "./app/dictation/types";
 
 type ProviderKind = "stt" | "llm";
-type ProviderId = "openai_compatible" | "xiaomi_mimo";
+type ProviderId = "openai_compatible" | "xiaomi_mimo" | "local_qwen3_asr";
 
 type ProviderConfig = {
   providerId: ProviderId;
   baseUrl: string;
   model: string;
+  mmprojPath?: string | null;
 };
 
 type ProviderDescriptor = {
@@ -62,6 +63,7 @@ function useProviderSection(kind: ProviderKind) {
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [mmprojPath, setMmprojPath] = useState("");
   const [hasStoredKey, setHasStoredKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -78,6 +80,7 @@ function useProviderSection(kind: ProviderKind) {
       setProviderOptions(options);
       setBaseUrl(config.baseUrl);
       setModel(config.model);
+      setMmprojPath(config.mmprojPath ?? "");
       const stored = await invoke<boolean>("has_api_key", { kind });
       setHasStoredKey(stored);
     } catch (error) {
@@ -99,6 +102,7 @@ function useProviderSection(kind: ProviderKind) {
         baseUrl,
         model,
         apiKey,
+        mmprojPath: mmprojPath.trim() ? mmprojPath : null,
       });
       if (apiKey.trim()) {
         setHasStoredKey(true);
@@ -111,7 +115,7 @@ function useProviderSection(kind: ProviderKind) {
     } finally {
       setIsSaving(false);
     }
-  }, [kind, providerId, baseUrl, model, apiKey]);
+  }, [kind, providerId, baseUrl, model, apiKey, mmprojPath]);
 
   const selectProvider = (nextProviderId: ProviderId) => {
     setProviderId(nextProviderId);
@@ -119,6 +123,7 @@ function useProviderSection(kind: ProviderKind) {
     if (!descriptor) return;
     setBaseUrl(descriptor.defaultBaseUrl);
     setModel(descriptor.defaultModel);
+    setMmprojPath("");
     setTestResult(null);
   };
 
@@ -147,6 +152,8 @@ function useProviderSection(kind: ProviderKind) {
     setModel,
     apiKey,
     setApiKey,
+    mmprojPath,
+    setMmprojPath,
     hasStoredKey,
     isSaving,
     isTesting,
@@ -169,6 +176,10 @@ export function ProviderSection({
   onSaved?: () => void;
 }) {
   const section = useProviderSection(kind);
+  const isLocal = section.providerId === "local_qwen3_asr";
+  const isConfigured = isLocal
+    ? Boolean(section.model.trim() && section.mmprojPath.trim())
+    : section.hasStoredKey;
   const save = async () => {
     await section.save();
     onSaved?.();
@@ -181,8 +192,8 @@ export function ProviderSection({
           <h2 className="section-title">{title}</h2>
           <p className="mt-1 mb-0 max-w-[560px] text-xs leading-relaxed text-white/44">{description}</p>
         </div>
-        <span className={`mt-0.5 text-[11px] ${section.hasStoredKey ? "text-[#b9c6cc]" : "text-white/32"}`}>
-          {section.hasStoredKey ? "已配置" : "未配置"}
+        <span className={`mt-0.5 text-[11px] ${isConfigured ? "text-[#b9c6cc]" : "text-white/32"}`}>
+          {isConfigured ? "已配置" : "未配置"}
         </span>
       </div>
 
@@ -203,36 +214,50 @@ export function ProviderSection({
           </span>
         </label>
         <label>
-          <span className={LABEL}>接口地址</span>
+          <span className={LABEL}>{isLocal ? "本地服务地址" : "接口地址"}</span>
           <input
             className={FIELD}
             value={section.baseUrl}
             onChange={(event) => section.setBaseUrl(event.target.value)}
-            placeholder="https://api.siliconflow.cn/v1/..."
+            placeholder={isLocal ? "http://127.0.0.1:8080" : "https://api.siliconflow.cn/v1/..."}
           />
         </label>
         <label>
-          <span className={LABEL}>模型</span>
+          <span className={LABEL}>{isLocal ? "GGUF 模型路径" : "模型"}</span>
           <input
             className={FIELD}
             value={section.model}
             onChange={(event) => section.setModel(event.target.value)}
+            placeholder={isLocal ? "/Users/.../Qwen3-ASR-1.7B-Q8_0.gguf" : undefined}
           />
         </label>
+        {isLocal && (
+          <label className="col-span-2">
+            <span className={LABEL}>mmproj 音频投影路径</span>
+            <input
+              className={FIELD}
+              value={section.mmprojPath}
+              onChange={(event) => section.setMmprojPath(event.target.value)}
+              placeholder="/Users/.../mmproj-Qwen3-ASR-1.7B-Q8_0.gguf"
+            />
+          </label>
+        )}
       </div>
 
-      <div className="mt-3 mb-4">
-        <label className={LABEL}>
-          API 密钥 {section.hasStoredKey && <span className="text-white/40">（已保存 — 留空则不修改）</span>}
-        </label>
-        <input
-          className={FIELD}
-          type="password"
-          value={section.apiKey}
-          onChange={(event) => section.setApiKey(event.target.value)}
-          placeholder={section.hasStoredKey ? "••••••••" : "sk-..."}
-        />
-      </div>
+      {!isLocal && (
+        <div className="mt-3 mb-4">
+          <label className={LABEL}>
+            API 密钥 {section.hasStoredKey && <span className="text-white/40">（已保存 — 留空则不修改）</span>}
+          </label>
+          <input
+            className={FIELD}
+            type="password"
+            value={section.apiKey}
+            onChange={(event) => section.setApiKey(event.target.value)}
+            placeholder={section.hasStoredKey ? "••••••••" : "sk-..."}
+          />
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <button className={PRIMARY_BUTTON} disabled={section.isSaving} onClick={() => void save()}>

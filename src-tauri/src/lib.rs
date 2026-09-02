@@ -103,6 +103,11 @@ pub fn run() {
             app::screen_capture::register_screenshot_shortcut(app.handle());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("failed to run Tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building Tauri application")
+        .run(|_app, event| {
+            if let tauri::RunEvent::Exit = event {
+                providers::stt::shutdown_server();
+            }
+        });
 }

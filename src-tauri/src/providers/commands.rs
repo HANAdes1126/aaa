@@ -25,6 +25,7 @@ pub async fn save_provider_config(
     base_url: String,
     model: String,
     api_key: String,
+    mmproj_path: Option<String>,
 ) -> Result<(), String> {
     if !provider_id.supports(kind) {
         return Err(format!(
@@ -40,6 +41,7 @@ pub async fn save_provider_config(
             provider_id,
             base_url,
             model,
+            mmproj_path,
         },
     )
     .map_err(|error| error.to_string())?;

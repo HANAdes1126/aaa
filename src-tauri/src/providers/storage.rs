@@ -20,6 +20,8 @@ struct StoredProviderConfig {
     provider_id: Option<ProviderId>,
     base_url: String,
     model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mmproj_path: Option<String>,
 }
 
 impl StoredProviderConfig {
@@ -31,6 +33,7 @@ impl StoredProviderConfig {
             provider_id,
             base_url: self.base_url,
             model: self.model,
+            mmproj_path: self.mmproj_path,
         }
     }
 }
@@ -41,6 +44,7 @@ impl From<ProviderConfig> for StoredProviderConfig {
             provider_id: Some(config.provider_id),
             base_url: config.base_url,
             model: config.model,
+            mmproj_path: config.mmproj_path,
         }
     }
 }
@@ -120,6 +124,7 @@ mod tests {
             provider_id: ProviderId::XiaomiMimo,
             base_url: "https://api.xiaomimimo.com/v1/chat/completions".to_string(),
             model: "mimo-v2.5-asr".to_string(),
+            mmproj_path: None,
         });
         let json = serde_json::to_value(stored).unwrap();
         assert_eq!(json["provider_id"], "xiaomi_mimo");

@@ -22,6 +22,8 @@ pub enum ProviderId {
     #[serde(rename = "openai_compatible")]
     OpenAiCompatible,
     XiaomiMimo,
+    #[serde(rename = "local_qwen3_asr")]
+    LocalQwen3Asr,
 }
 
 impl ProviderId {
@@ -29,6 +31,7 @@ impl ProviderId {
         match self {
             ProviderId::OpenAiCompatible => "openai_compatible",
             ProviderId::XiaomiMimo => "xiaomi_mimo",
+            ProviderId::LocalQwen3Asr => "local_qwen3_asr",
         }
     }
 
@@ -36,6 +39,7 @@ impl ProviderId {
         match self {
             ProviderId::OpenAiCompatible => true,
             ProviderId::XiaomiMimo => kind == ProviderKind::Stt,
+            ProviderId::LocalQwen3Asr => kind == ProviderKind::Stt,
         }
     }
 }
@@ -46,6 +50,8 @@ pub struct ProviderConfig {
     pub provider_id: ProviderId,
     pub base_url: String,
     pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mmproj_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,6 +90,13 @@ pub fn provider_descriptors(kind: ProviderKind) -> Vec<ProviderDescriptor> {
             default_base_url: "https://api.xiaomimimo.com/v1/chat/completions",
             default_model: "mimo-v2.5-asr",
         });
+        descriptors.push(ProviderDescriptor {
+            id: ProviderId::LocalQwen3Asr,
+            display_name: "本地 Qwen3-ASR",
+            description: "本地 llama.cpp 离线转写，低延迟",
+            default_base_url: "http://127.0.0.1:8080",
+            default_model: "",
+        });
     }
 
     descriptors
@@ -94,6 +107,7 @@ pub fn default_stt_config() -> ProviderConfig {
         provider_id: ProviderId::OpenAiCompatible,
         base_url: "https://api.siliconflow.cn/v1/audio/transcriptions".to_string(),
         model: "FunAudioLLM/SenseVoiceSmall".to_string(),
+        mmproj_path: None,
     }
 }
 
@@ -102,6 +116,7 @@ pub fn default_llm_config() -> ProviderConfig {
         provider_id: ProviderId::OpenAiCompatible,
         base_url: "https://api.siliconflow.cn/v1/chat/completions".to_string(),
         model: "Qwen/Qwen3-32B".to_string(),
+        mmproj_path: None,
     }
 }
 
@@ -154,9 +169,11 @@ mod tests {
 
     #[test]
     fn provider_choices_are_independent_per_kind() {
-        assert_eq!(provider_descriptors(ProviderKind::Stt).len(), 2);
+        assert_eq!(provider_descriptors(ProviderKind::Stt).len(), 3);
         assert_eq!(provider_descriptors(ProviderKind::Llm).len(), 1);
         assert!(!ProviderId::XiaomiMimo.supports(ProviderKind::Llm));
+        assert!(!ProviderId::LocalQwen3Asr.supports(ProviderKind::Llm));
+        assert!(ProviderId::LocalQwen3Asr.supports(ProviderKind::Stt));
     }
 
     #[test]

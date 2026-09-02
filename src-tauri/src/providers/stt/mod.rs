@@ -1,13 +1,15 @@
 mod audio_normalization;
+mod local;
 mod mimo;
 mod openai_compatible;
 
 use crate::providers::config::{DiagnosticResult, ProviderId, ProviderKind};
-use crate::providers::credentials;
 use crate::providers::error::ProviderResult;
+use crate::providers::{credentials, storage};
 use anyhow::{anyhow, Result};
 use tauri::AppHandle;
 
+pub use local::{shutdown_server, LocalQwen3AsrStt};
 pub use mimo::MimoStt;
 pub use openai_compatible::OpenAiCompatibleStt;
 
@@ -48,10 +50,17 @@ pub trait SttProvider: Send + Sync {
 }
 
 pub fn build_from_saved_config(app: &AppHandle) -> Result<Box<dyn SttProvider>> {
-    let credentials = credentials::resolve(app, ProviderKind::Stt)?;
-    let provider: Box<dyn SttProvider> = match credentials.provider_id {
-        ProviderId::OpenAiCompatible => Box::new(OpenAiCompatibleStt::new(credentials)),
-        ProviderId::XiaomiMimo => Box::new(MimoStt::new(credentials)),
+    let config = storage::get_config(app, ProviderKind::Stt)?;
+    let provider: Box<dyn SttProvider> = if config.provider_id == ProviderId::LocalQwen3Asr {
+        // Local model requires no API key, so bypass credentials::resolve.
+        Box::new(LocalQwen3AsrStt::new(config))
+    } else {
+        let credentials = credentials::resolve(app, ProviderKind::Stt)?;
+        match credentials.provider_id {
+            ProviderId::OpenAiCompatible => Box::new(OpenAiCompatibleStt::new(credentials)),
+            ProviderId::XiaomiMimo => Box::new(MimoStt::new(credentials)),
+            ProviderId::LocalQwen3Asr => unreachable!("handled above"),
+        }
     };
     if !provider.id().supports(ProviderKind::Stt) {
         return Err(anyhow!("Configured provider does not support ASR."));

@@ -140,6 +140,7 @@ fn import(
             provider_id,
             base_url,
             model,
+            mmproj_path: None,
         },
     ) {
         tracing::warn!("Failed to seed {label} config from .env: {error}");

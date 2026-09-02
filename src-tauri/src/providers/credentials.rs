@@ -21,6 +21,7 @@ pub fn resolve(app: &AppHandle, kind: ProviderKind) -> Result<ResolvedCredential
         provider_id,
         base_url,
         model,
+        ..
     } = storage::get_config(app, kind)?;
     let api_key = secrets::get_api_key(kind)?
         .ok_or_else(|| anyhow!("No API key configured for {}", kind.as_str()))?;
