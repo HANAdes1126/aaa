@@ -1408,7 +1408,7 @@ textarea:focus-visible {
 .meetly-workspace input:focus-visible,
 .meetly-workspace textarea:focus-visible,
 .meetly-island button:focus-visible {
-  outline: 2px solid rgb(104 117 24 / 0.42);
+  outline: 2px solid rgb(120 122 115 / 0.26);
   outline-offset: 2px;
 }
 
@@ -1684,8 +1684,8 @@ textarea:focus-visible {
 }
 
 .agent-composer-shell:focus-within {
-  border-color: #aeb57a;
-  box-shadow: 0 5px 20px rgb(71 78 27 / 0.1);
+  border-color: #cccec5;
+  box-shadow: 0 5px 20px rgb(36 38 30 / 0.05);
 }
 
 .agent-composer-shell textarea {
