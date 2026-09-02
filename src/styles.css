@@ -2510,6 +2510,11 @@ textarea:focus-visible {
 .meetly-ghost .agent-tool-row,
 .meetly-ghost .context-drop-overlay,
 .meetly-ghost .ui-field,
+.meetly-ghost .workspace-brand,
+.meetly-ghost .workspace-brand-mark,
+.meetly-ghost .meetly-island-header,
+.meetly-ghost .agent-markdown code,
+.meetly-ghost .voice-answer-markdown code,
 .meetly-ghost .agent-markdown pre,
 .meetly-ghost .voice-answer-markdown pre {
   border-color: transparent !important;
@@ -2519,6 +2524,26 @@ textarea:focus-visible {
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* The code surface itself is chrome. syntax-highlighter tokens inside `pre`
+   carry per-token colours that show through as "highlighter" smears in ghost
+   mode. Collapse the children to the same mid-grey so a code block reads as
+   plain text on a transparent surface. */
+.meetly-ghost .agent-markdown pre *,
+.meetly-ghost .voice-answer-markdown pre * {
+  background: transparent !important;
+  color: rgb(var(--ghost-ink) / var(--ghost-base)) !important;
+  text-shadow: none !important;
+}
+
+/* The brand mark is a 30x30 chrome tile, not body content. Dim it harder than
+   body text and drop its accent border so it does not read as a solid orange
+   chip against a pastel IDE background. */
+.meetly-ghost .workspace-brand-mark {
+  border-color: transparent !important;
+  color: rgb(var(--ghost-ink) / var(--ghost-soft)) !important;
+  opacity: 0.55;
 }
 
 /* Every chrome line goes with the surfaces. */
