@@ -26,20 +26,24 @@ impl MimoStt {
     }
 
     fn request_body(&self, audio_data_url: String) -> Value {
+        // 显式附带 text 指令，否则 MiMo 会按训练时的 ASR 模板把
+        // `language Chinese<asr_text>…</asr_text>` 一并塞进响应。
         json!({
             "model": self.model,
             "messages": [{
                 "role": "user",
-                "content": [{
-                    "type": "input_audio",
-                    "input_audio": {
-                        "data": audio_data_url
+                "content": [
+                    {
+                        "type": "input_audio",
+                        "input_audio": { "data": audio_data_url }
+                    },
+                    {
+                        "type": "text",
+                        "text": "请转写这段音频，只输出转写文本，不要任何解释。"
                     }
-                }]
+                ]
             }],
-            "asr_options": {
-                "language": "auto"
-            },
+            "asr_options": { "language": "auto" },
             "stream": false
         })
     }
@@ -91,19 +95,34 @@ impl SttProvider for MimoStt {
             .await
             .map_err(|error| ProviderFailure::invalid_response(self.id(), error.to_string()))?;
         parse_transcript(&body)
-            .map(str::to_string)
             .map_err(|message| ProviderFailure::invalid_response(self.id(), message))
     }
 }
 
-fn parse_transcript(body: &Value) -> Result<&str, &'static str> {
-    body.get("choices")
+fn parse_transcript(body: &Value) -> Result<String, &'static str> {
+    let raw = body
+        .get("choices")
         .and_then(|choices| choices.get(0))
         .and_then(|choice| choice.get("message"))
         .and_then(|message| message.get("content"))
         .and_then(Value::as_str)
-        .map(str::trim)
-        .ok_or("MiMo response missing choices[0].message.content")
+        .ok_or("MiMo response missing choices[0].message.content")?;
+    Ok(strip_asr_text_tags(raw))
+}
+
+/// MiMo 在收到裸 `input_audio` 请求时仍会按训练时的 ASR 模板输出
+/// `language Chinese<asr_text>…</asr_text>`，即便已经在 request 里附了
+/// text 指令也可能夹带同一前缀。这里的剥离是兜底，确保返回给前端的
+/// 是裸文本。
+fn strip_asr_text_tags(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if let Some(start) = trimmed.find("<asr_text>") {
+        let after = &trimmed[start + "<asr_text>".len()..];
+        if let Some(end) = after.find("</asr_text>") {
+            return after[..end].trim().to_string();
+        }
+    }
+    trimmed.to_string()
 }
 
 #[cfg(test)]
@@ -121,13 +140,29 @@ mod tests {
         let body = provider.request_body("data:audio/wav;base64,AAAA".to_string());
         assert_eq!(body["model"], "mimo-v2.5-asr");
         assert_eq!(body["messages"][0]["content"][0]["type"], "input_audio");
+        assert!(
+            body["messages"][0]["content"][1]["type"] == "text"
+                && body["messages"][0]["content"][1]["text"]
+                    .as_str()
+                    .unwrap_or("")
+                    .contains("只输出转写文本"),
+            "request body must include an explicit text instruction so MiMo does not echo the ASR template",
+        );
         assert_eq!(body["asr_options"]["language"], "auto");
     }
 
     #[test]
     fn parses_mimo_transcript() {
         let body = json!({"choices": [{"message": {"content": " 你好世界 "}}]});
-        assert_eq!(parse_transcript(&body), Ok("你好世界"));
+        assert_eq!(parse_transcript(&body), Ok("你好世界".to_string()));
+    }
+
+    #[test]
+    fn strips_asr_text_markup() {
+        assert_eq!(
+            strip_asr_text_tags("language Chinese<asr_text>你好，面试助手。</asr_text>"),
+            "你好，面试助手。"
+        );
     }
 
     #[tokio::test]

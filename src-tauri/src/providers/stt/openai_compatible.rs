@@ -201,7 +201,21 @@ fn parse_sse_transcript(payload: &str) -> Result<String, &'static str> {
     if transcript.trim().is_empty() {
         return Err("Chat-audio streaming response contained no transcript text.");
     }
-    Ok(transcript.trim().to_string())
+    Ok(strip_asr_text_tags(&transcript))
+}
+
+/// 部分 chat-asr 模型即便在 prompt 里被要求"只输出转写文本"，仍会按
+/// 训练时的模板把 `language Chinese<asr_text>…</asr_text>` 一并返回。
+/// 这里在解析层兜底，确保前端拿到的只有裸文本。
+fn strip_asr_text_tags(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if let Some(start) = trimmed.find("<asr_text>") {
+        let after = &trimmed[start + "<asr_text>".len()..];
+        if let Some(end) = after.find("</asr_text>") {
+            return after[..end].trim().to_string();
+        }
+    }
+    trimmed.to_string()
 }
 
 #[cfg(test)]
@@ -237,5 +251,19 @@ mod tests {
             "data: [DONE]\n\n",
         );
         assert_eq!(parse_sse_transcript(payload), Ok("第一句。第二句。".to_string()));
+    }
+
+    #[test]
+    fn streaming_payload_strips_asr_text_markup() {
+        let payload = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"language Chinese<asr_text>\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"你好，面试助手。\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"</asr_text>\"}}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(
+            parse_sse_transcript(payload),
+            Ok("你好，面试助手。".to_string())
+        );
     }
 }
