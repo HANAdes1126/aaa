@@ -2677,6 +2677,14 @@ textarea:focus-visible {
   color: rgb(var(--ghost-ink) / var(--ghost-base)) !important;
 }
 
+/* Hover states: the paper theme paints a hex background on :hover, which
+   is not caught by any other ghost rule above. Mouse-over is transient
+   but the chip stays visible long enough to leak on a screenshot. */
+.meetly-ghost .workspace-nav-item:hover,
+.meetly-ghost .workspace-header-button:hover {
+  background: transparent !important;
+}
+
 /* Live indicators: the green dot and orange waveform give the panel away. */
 .meetly-ghost .session-dot,
 .meetly-ghost .session-dot.is-live {
