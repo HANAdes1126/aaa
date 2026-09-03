@@ -168,7 +168,7 @@ export function AgentWorkspace({
         </header>
 
         {view === "agent" ? (
-          <div className="agent-layout">
+          <div className={ctx.state === "listening" ? "agent-layout" : "agent-layout is-solo"}>
             <div className="agent-column">
               <AgentTimeline
                 chatTurns={ctx.agentChatTurns}

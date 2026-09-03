@@ -856,12 +856,20 @@ textarea:focus-visible {
   grid-template-columns: minmax(0, 1fr) 246px;
 }
 
+.agent-layout.is-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .agent-column {
   display: flex;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
   border-right: 1px solid rgb(238 240 232 / 0.085);
+}
+
+.agent-layout.is-solo .agent-column {
+  border-right: none;
 }
 
 .agent-timeline {
@@ -1604,9 +1612,17 @@ textarea:focus-visible {
   grid-template-columns: minmax(0, 1fr) 268px;
 }
 
+.agent-layout.is-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .agent-column {
   border-right-color: #e0e1da;
   background: #fafaf7;
+}
+
+.agent-layout.is-solo .agent-column {
+  border-right: none;
 }
 
 .agent-timeline {
