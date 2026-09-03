@@ -2691,9 +2691,15 @@ textarea:focus-visible {
 }
 
 .meetly-ghost .agent-thinking-row,
-.meetly-ghost .agent-thinking-row > span {
+.meetly-ghost .agent-thinking-row > span,
+.meetly-ghost .agent-empty-glyph {
   background: transparent !important;
   color: rgb(var(--ghost-ink) / var(--ghost-soft)) !important;
+}
+
+.meetly-ghost .agent-empty-glyph {
+  border-color: transparent !important;
+  opacity: 0.55;
 }
 
 .meetly-ghost .agent-message,
