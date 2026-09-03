@@ -200,7 +200,7 @@ export function AgentWorkspace({
                 </div>
               </div>
             </div>
-            <TranscriptRail ctx={ctx} />
+            {ctx.state === "listening" && <TranscriptRail ctx={ctx} />}
           </div>
         ) : view === "settings" ? (
           <div className="workspace-settings">
