@@ -51,17 +51,43 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          # GitHub's UI does not enforce `required: true` on string inputs: an
+          # untouched field is submitted as "". That empty string used to be
+          # written straight into tauri.conf.json, and the CLI then aborted
+          # with the unhelpful
+          #   "`tauri.conf.json > version` must be a semver string"
+          # (reproduced locally with version: ""). Normalise + fail fast here,
+          # before the 15-minute build, instead.
+          V="$(printf '%s' '${{ inputs.version }}' | tr -d '[:space:]')"
+          V="${V#v}"; V="${V#V}"
+          if [ -z "$V" ]; then
+            V="$(node -p "require('./package.json').version")"
+            echo "::warning::version input was empty; falling back to package.json ($V)"
+          fi
+          node -e 'const v=process.argv[1]; if(!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(v)){console.error("::error::not a semver version: "+JSON.stringify(v)+" -- expected e.g. 0.1.9");process.exit(1)}' "$V"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $V"
+
       - name: Set package version
         shell: bash
         run: |
           set -euo pipefail
-          npm pkg set version="${{ inputs.version }}"
+          npm pkg set version="$VERSION"
           node -e 'const fs=require("fs"); const p="src-tauri/tauri.conf.json"; const c=JSON.parse(fs.readFileSync(p,"utf8")); c.version=process.env.VERSION; fs.writeFileSync(p, JSON.stringify(c,null,2)+"\n");'
           # Cargo.toml is bumped too: the Tauri CLI rejects a build whose
           # tauri.conf.json version disagrees with the crate version.
           node -e 'const fs=require("fs"); const p="src-tauri/Cargo.toml"; const s=fs.readFileSync(p,"utf8"); fs.writeFileSync(p, s.replace(/^version = ".*"$/m, `version = "${process.env.VERSION}"`));'
+          # Echo what actually landed on disk: if a future edit writes the
+          # wrong field, this line shows it before the build starts.
+          node -p "'tauri.conf.json version = ' + JSON.stringify(require('./src-tauri/tauri.conf.json').version)"
+          grep -m1 '^version = ' src-tauri/Cargo.toml
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
 
       # Bundling is driven by src-tauri/tauri.windows.conf.json, which Tauri
       # merges automatically on Windows: NSIS only (no MSI, so no WiX needed),
@@ -82,8 +108,8 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.version }}-windows
-          name: Meetly v${{ inputs.version }} (Windows)
+          tag_name: v${{ steps.version.outputs.version }}-windows
+          name: Meetly v${{ steps.version.outputs.version }} (Windows)
           prerelease: ${{ inputs.prerelease }}
           files: |
             ${{ steps.artifacts.outputs.setup }}
