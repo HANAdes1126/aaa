@@ -1,6 +1,12 @@
 name: Release Windows
 
 on:
+  # Every push to main builds an installer so a fix can be downloaded without
+  # anyone visiting the Actions page. Publishing a release stays manual: the
+  # tag is derived from package.json, so an automatic run would overwrite the
+  # published vX.Y.Z-windows release on every commit.
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       version:
@@ -12,6 +18,12 @@ on:
         required: true
         type: boolean
         default: true
+
+# Push builds are disposable: a newer commit makes the running one pointless.
+# Manual runs are left alone so a release is never cancelled halfway.
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 permissions:
   contents: write
@@ -105,7 +117,18 @@ jobs:
           echo "Found installer: $SETUP"
           echo "setup=$SETUP" >> "$GITHUB_OUTPUT"
 
+      # Available on every run, so a push-triggered build is still downloadable
+      # from the run page without a published release.
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Meetly-windows-setup-v${{ steps.version.outputs.version }}
+          path: ${{ steps.artifacts.outputs.setup }}
+          if-no-files-found: error
+
+      # Manual only -- see the note on `on: push`.
       - name: Publish GitHub release
+        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}-windows
