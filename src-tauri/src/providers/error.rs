@@ -56,6 +56,13 @@ impl ProviderFailure {
         }
     }
 
+    /// The message exactly as the provider wrote it, without the provider id
+    /// and kind prefix that `Display` adds. Callers match on this to tell two
+    /// failures of the same kind apart.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
     pub fn invalid_request(provider_id: ProviderId, message: impl Into<String>) -> Self {
         Self::new(
             provider_id,

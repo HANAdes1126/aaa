@@ -1,9 +1,9 @@
 use super::audio_normalization::normalize_to_wav_16k_mono;
 use super::{AsrCapabilities, AsrExecutionMode, BatchAsrRequest, SttProvider};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use crate::providers::config::ProviderId;
 use crate::providers::credentials::ResolvedCredentials;
 use crate::providers::error::{ProviderFailure, ProviderResult};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use futures_util::StreamExt;
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -33,7 +33,10 @@ impl OpenAiCompatibleStt {
         }
     }
 
-    async fn transcribe_via_streaming_chat(&self, request: BatchAsrRequest) -> ProviderResult<String> {
+    async fn transcribe_via_streaming_chat(
+        &self,
+        request: BatchAsrRequest,
+    ) -> ProviderResult<String> {
         let wav = normalize_to_wav_16k_mono(request)
             .map_err(|error| ProviderFailure::invalid_request(self.id(), error.to_string()))?;
         let audio_data_url = format!("data:audio/wav;base64,{}", BASE64.encode(wav));
@@ -79,12 +82,28 @@ impl OpenAiCompatibleStt {
         let mut stream = response.bytes_stream();
         let mut payload = String::new();
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk
-                .map_err(|error| ProviderFailure::transport(self.id(), error))?;
+            let chunk = chunk.map_err(|error| ProviderFailure::transport(self.id(), error))?;
             payload.push_str(&String::from_utf8_lossy(&chunk));
         }
-        parse_sse_transcript(&payload)
-            .map_err(|message| ProviderFailure::invalid_response(self.id(), message))
+        match parse_sse_transcript(&payload) {
+            Ok(transcript) => Ok(transcript),
+            Err(message) => {
+                // A bare "no transcript" says nothing about *why*. The head of
+                // the response is short and is the only way to tell an empty
+                // recognition from a payload shape we failed to read.
+                let _ = crate::debug_log::append(&format!(
+                    "[stt] chat-audio stream yielded no transcript: {message} | head={}",
+                    response_preview(&payload, 600)
+                ));
+                Err(ProviderFailure::invalid_response(
+                    self.id(),
+                    format!(
+                        "{message} Response head: {}",
+                        response_preview(&payload, 300)
+                    ),
+                ))
+            }
+        }
     }
 }
 
@@ -164,9 +183,7 @@ fn requires_chat_audio_streaming_retry(status: StatusCode, body: &str) -> bool {
     // answers a multipart upload with 404/405/415 regardless of key validity.
     if matches!(
         status,
-        StatusCode::NOT_FOUND
-            | StatusCode::METHOD_NOT_ALLOWED
-            | StatusCode::UNSUPPORTED_MEDIA_TYPE
+        StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED | StatusCode::UNSUPPORTED_MEDIA_TYPE
     ) {
         return true;
     }
@@ -175,16 +192,13 @@ fn requires_chat_audio_streaming_retry(status: StatusCode, body: &str) -> bool {
         return false;
     }
 
-    let code_is_11101 = serde_json::from_str::<Value>(body)
-        .ok()
-        .and_then(|value| {
-            let error = value.get("error").unwrap_or(&value);
-            error.get("code").and_then(|code| {
-                code.as_i64()
-                    .or_else(|| code.as_str().and_then(|value| value.parse::<i64>().ok()))
-            })
+    let code_is_11101 = serde_json::from_str::<Value>(body).ok().and_then(|value| {
+        let error = value.get("error").unwrap_or(&value);
+        error.get("code").and_then(|code| {
+            code.as_i64()
+                .or_else(|| code.as_str().and_then(|value| value.parse::<i64>().ok()))
         })
-        == Some(11101);
+    }) == Some(11101);
     if code_is_11101 || body.contains("Non-stream chat request is currently not supported") {
         return true;
     }
@@ -197,10 +211,12 @@ fn requires_chat_audio_streaming_retry(status: StatusCode, body: &str) -> bool {
 
 fn parse_sse_transcript(payload: &str) -> Result<String, &'static str> {
     let mut transcript = String::new();
+    let mut saw_data_line = false;
     for line in payload.lines() {
         let Some(data) = line.trim_start().strip_prefix("data:") else {
             continue;
         };
+        saw_data_line = true;
         let data = data.trim();
         if data.is_empty() || data == "[DONE]" {
             continue;
@@ -219,10 +235,65 @@ fn parse_sse_transcript(payload: &str) -> Result<String, &'static str> {
         }
     }
 
-    if transcript.trim().is_empty() {
-        return Err("Chat-audio streaming response contained no transcript text.");
+    if !transcript.trim().is_empty() {
+        return Ok(strip_asr_text_tags(&transcript));
     }
-    Ok(strip_asr_text_tags(&transcript))
+
+    // A host that ignores `stream: true` answers with a single JSON object
+    // instead of an SSE stream. Read that shape before declaring the response
+    // empty: `choices[0].message.content` is where its text lives.
+    if !saw_data_line {
+        if let Some(text) = parse_json_transcript(payload) {
+            if !text.trim().is_empty() {
+                return Ok(strip_asr_text_tags(&text));
+            }
+        }
+    }
+
+    Err(super::EMPTY_TRANSCRIPT_MESSAGE)
+}
+
+/// Reads a non-streaming `chat.completion` body. `content` is a string in
+/// Bailian's compatible mode but is typed as an array of parts elsewhere, so
+/// both shapes are accepted.
+fn parse_json_transcript(payload: &str) -> Option<String> {
+    let value = serde_json::from_str::<Value>(payload.trim()).ok()?;
+    let choice = value.get("choices")?.get(0)?;
+    let content = choice
+        .get("message")
+        .and_then(|message| message.get("content"))
+        .or_else(|| choice.get("delta").and_then(|delta| delta.get("content")))
+        .or_else(|| choice.get("text"))?;
+    match content {
+        Value::String(text) => Some(text.clone()),
+        Value::Array(parts) => Some(
+            parts
+                .iter()
+                .filter_map(|part| part.get("text").and_then(Value::as_str))
+                .collect::<String>(),
+        ),
+        _ => None,
+    }
+}
+
+fn response_preview(payload: &str, limit: usize) -> String {
+    let collapsed: String = payload
+        .chars()
+        .map(|character| {
+            if character.is_whitespace() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .take(limit)
+        .collect();
+    let collapsed = collapsed.trim().to_string();
+    if collapsed.is_empty() {
+        "<empty response body>".to_string()
+    } else {
+        collapsed
+    }
 }
 
 /// 部分 chat-asr 模型即便在 prompt 里被要求"只输出转写文本"，仍会按
@@ -295,7 +366,35 @@ mod tests {
             "data: {\"choices\":[{\"delta\":{\"content\":\"第二句。\"}}]}\n\n",
             "data: [DONE]\n\n",
         );
-        assert_eq!(parse_sse_transcript(payload), Ok("第一句。第二句。".to_string()));
+        assert_eq!(
+            parse_sse_transcript(payload),
+            Ok("第一句。第二句。".to_string())
+        );
+    }
+
+    #[test]
+    fn reads_plain_json_when_streaming_is_ignored() {
+        // A host that ignores `stream: true` answers with one JSON object.
+        let payload = r#"{"choices":[{"message":{"content":"你好，面试助手。"}}]}"#;
+        assert_eq!(
+            parse_sse_transcript(payload),
+            Ok("你好，面试助手。".to_string())
+        );
+    }
+
+    #[test]
+    fn reads_json_content_typed_as_parts() {
+        let payload =
+            r#"{"choices":[{"message":{"content":[{"type":"text","text":"第一段。"}]}}]}"#;
+        assert_eq!(parse_sse_transcript(payload), Ok("第一段。".to_string()));
+    }
+
+    #[test]
+    fn reports_empty_payload_instead_of_guessing() {
+        assert_eq!(response_preview("", 300), "<empty response body>");
+        assert_eq!(response_preview("  \n data: x ", 300), "data: x");
+        // Long payloads are cut, not dumped whole into the UI.
+        assert!(response_preview(&"a".repeat(5_000), 300).len() <= 300);
     }
 
     #[test]

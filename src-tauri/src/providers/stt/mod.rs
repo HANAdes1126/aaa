@@ -5,10 +5,16 @@ mod openai_compatible;
 pub mod text_guard;
 
 use crate::providers::config::{DiagnosticResult, ProviderId, ProviderKind};
-use crate::providers::error::ProviderResult;
+use crate::providers::error::{ProviderFailureKind, ProviderResult};
 use crate::providers::{credentials, storage};
 use anyhow::{anyhow, Result};
 use tauri::AppHandle;
+
+/// Raised when an ASR response is well formed but carries no text. Shared so
+/// the connectivity probe can recognise the one failure that silence makes
+/// expected, without matching on wording scattered across providers.
+pub const EMPTY_TRANSCRIPT_MESSAGE: &str =
+    "Chat-audio streaming response contained no transcript text.";
 
 pub use local::{shutdown_server, LocalQwen3AsrStt};
 pub use mimo::MimoStt;
@@ -100,17 +106,32 @@ pub async fn test_connection(app: &AppHandle) -> DiagnosticResult {
         "probe.wav",
         "audio/wav",
     );
+    let reachable = format!(
+        "{} 接口可访问，并已接受语音转写测试请求。",
+        provider.id().as_str()
+    );
     match provider.transcribe(request).await {
         Ok(_) => DiagnosticResult {
             success: true,
-            message: format!(
-                "{} 接口可访问，并已接受语音转写测试请求。",
-                provider.id().as_str()
-            ),
+            message: reachable,
         },
-        Err(error) => DiagnosticResult {
-            success: false,
-            message: error.to_string(),
-        },
+        Err(error) => {
+            // The probe is 0.2 s of digital silence, so an engine that answers
+            // correctly has nothing to transcribe. Reaching that state proves
+            // the endpoint, key and payload shape are all accepted -- which is
+            // exactly what this button tests. Any other failure is real.
+            if error.kind == ProviderFailureKind::InvalidResponse
+                && error.message().starts_with(EMPTY_TRANSCRIPT_MESSAGE)
+            {
+                return DiagnosticResult {
+                    success: true,
+                    message: format!("{reachable}（探针为静音，无转写文本属预期）"),
+                };
+            }
+            DiagnosticResult {
+                success: false,
+                message: error.to_string(),
+            }
+        }
     }
 }
