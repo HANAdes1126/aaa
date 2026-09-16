@@ -590,6 +590,8 @@ pub fn setup_island_window(app: &mut App) -> tauri::Result<()> {
 
     #[cfg(target_os = "macos")]
     setup_macos_panel(&island);
+    #[cfg(target_os = "windows")]
+    setup_windows_overlay(&island);
 
     crate::appearance::apply_to_windows(app.app_handle());
 
@@ -602,6 +604,8 @@ pub fn setup_island_window(app: &mut App) -> tauri::Result<()> {
     if let Some(voice_overlay) = app.get_webview_window("voice-overlay") {
         #[cfg(target_os = "macos")]
         setup_macos_panel(&voice_overlay);
+        #[cfg(target_os = "windows")]
+        setup_windows_overlay(&voice_overlay);
 
         let overlay_scale = crate::appearance::load().ui_scale;
         voice_overlay.set_size(tauri::LogicalSize::new(
@@ -1185,6 +1189,35 @@ fn setup_macos_panel(window: &WebviewWindow) {
 
     delegate.set_listener(Box::new(move |_delegate_name: String| {}));
     panel.set_delegate(delegate);
+}
+
+/// Windows counterpart of `setup_macos_panel`, covering the two of the four
+/// NSPanel behaviours that have a Windows equivalent.
+///
+/// `set_always_on_top` is `SetWindowPos(HWND_TOPMOST)` under the hood
+/// (tao's `WindowFlags::ALWAYS_ON_TOP`), which is what keeps the overlays
+/// above the meeting app. It is a persistent window property, so show/hide
+/// cycles do not drop it.
+///
+/// `set_focusable(false)` maps to `WS_EX_NOACTIVATE` in tao, the stand-in for
+/// macOS's `becomesKeyOnlyIfNeeded`: the overlay stays clickable but never
+/// takes the keyboard away from the app underneath. `set_island_interactive()`
+/// turns it back on when the island expands.
+#[cfg(target_os = "windows")]
+fn setup_windows_overlay(window: &WebviewWindow) {
+    let label = window.label().to_string();
+
+    if let Err(error) = window.set_always_on_top(true) {
+        let _ = crate::debug_log::append(&format!(
+            "[window] failed to pin {label} on top error={error}"
+        ));
+    }
+
+    if let Err(error) = window.set_focusable(false) {
+        let _ = crate::debug_log::append(&format!(
+            "[window] failed to mark {label} as non-activating error={error}"
+        ));
+    }
 }
 
 #[cfg(test)]
