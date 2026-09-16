@@ -25,6 +25,15 @@ impl MimoStt {
         }
     }
 
+    /// MiMo 只认 `api-key`，而百炼等 OpenAI 兼容服务只认 `Authorization: Bearer`。
+    /// 两个都发：服务端各自忽略不认识的那个，互不影响。
+    fn auth_headers(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("api-key", self.api_key.clone()),
+            ("Authorization", format!("Bearer {}", self.api_key)),
+        ]
+    }
+
     fn request_body(&self, audio_data_url: String) -> Value {
         // 显式附带 text 指令，否则 MiMo 会按训练时的 ASR 模板把
         // `language Chinese<asr_text>…</asr_text>` 一并塞进响应。
@@ -75,10 +84,12 @@ impl SttProvider for MimoStt {
             ));
         }
 
-        let response = self
-            .client
-            .post(&self.base_url)
-            .header("api-key", &self.api_key)
+        let mut request = self.client.post(&self.base_url);
+        for (name, value) in self.auth_headers() {
+            request = request.header(name, value);
+        }
+
+        let response = request
             .json(&self.request_body(audio_data_url))
             .send()
             .await
@@ -150,6 +161,26 @@ mod tests {
             "request body must include an explicit text instruction so MiMo does not echo the ASR template",
         );
         assert_eq!(body["asr_options"]["language"], "auto");
+    }
+
+    #[test]
+    fn sends_both_mimo_and_bearer_auth_headers() {
+        let provider = MimoStt::new(ResolvedCredentials {
+            provider_id: ProviderId::XiaomiMimo,
+            base_url: "https://api.xiaomimimo.com/v1/chat/completions".to_string(),
+            model: "mimo-v2.5-asr".to_string(),
+            vision_model: "mimo-v2.5-asr".to_string(),
+            api_key: "secret".to_string(),
+        });
+        let headers = provider.auth_headers();
+        assert!(
+            headers.contains(&("api-key", "secret".to_string())),
+            "MiMo authenticates with the `api-key` header",
+        );
+        assert!(
+            headers.contains(&("Authorization", "Bearer secret".to_string())),
+            "OpenAI-compatible hosts such as DashScope authenticate with `Authorization: Bearer`",
+        );
     }
 
     #[test]
