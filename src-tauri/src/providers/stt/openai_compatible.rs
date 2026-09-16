@@ -47,6 +47,15 @@ impl OpenAiCompatibleStt {
             ));
         }
 
+        // Bailian's compatible mode allows exactly one item in the user
+        // message content array, and it must be `input_audio`. Sending the
+        // "transcribe this" instruction as a second `type: "text"` item makes
+        // the ASR task reject the whole request with
+        //   InternalError.Algo.InvalidParameter: The dedicated task `asr`
+        //   ... does not support this input.
+        // So no instruction is sent here. Models that then fall back to their
+        // training template answer `language Chinese<asr_text>…</asr_text>`,
+        // which strip_asr_text_tags() already unwraps.
         let body = json!({
             "model": self.model,
             "messages": [{
@@ -54,9 +63,6 @@ impl OpenAiCompatibleStt {
                 "content": [{
                     "type": "input_audio",
                     "input_audio": { "data": audio_data_url }
-                }, {
-                    "type": "text",
-                    "text": "请逐字转写这段音频。只输出转写文本，不要解释。"
                 }]
             }],
             "stream": true,
@@ -209,7 +215,7 @@ fn requires_chat_audio_streaming_retry(status: StatusCode, body: &str) -> bool {
     lowered.contains("required body invalid") || lowered.contains("request body format")
 }
 
-fn parse_sse_transcript(payload: &str) -> Result<String, &'static str> {
+fn parse_sse_transcript(payload: &str) -> Result<String, String> {
     let mut transcript = String::new();
     let mut saw_data_line = false;
     for line in payload.lines() {
@@ -222,8 +228,27 @@ fn parse_sse_transcript(payload: &str) -> Result<String, &'static str> {
             continue;
         }
         let Ok(event) = serde_json::from_str::<Value>(data) else {
-            return Err("Chat-audio streaming response contained an invalid SSE event.");
+            return Err(
+                "Chat-audio streaming response contained an invalid SSE event.".to_string(),
+            );
         };
+        // A rejected request can come back as 200 with the error *inside* the
+        // stream -- Bailian does exactly this. Such an event carries no delta,
+        // so without this check the failure reads as "no transcript text" and
+        // the actual reason is lost.
+        if let Some(error) = event.get("error") {
+            let code = error
+                .get("code")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown_error");
+            let message = error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("(no message)");
+            return Err(format!(
+                "ASR provider rejected the request in-stream ({code}): {message}"
+            ));
+        }
         if let Some(content) = event
             .get("choices")
             .and_then(|choices| choices.get(0))
@@ -250,7 +275,7 @@ fn parse_sse_transcript(payload: &str) -> Result<String, &'static str> {
         }
     }
 
-    Err(super::EMPTY_TRANSCRIPT_MESSAGE)
+    Err(super::EMPTY_TRANSCRIPT_MESSAGE.to_string())
 }
 
 /// Reads a non-streaming `chat.completion` body. `content` is a string in
@@ -370,6 +395,22 @@ mod tests {
             parse_sse_transcript(payload),
             Ok("第一句。第二句。".to_string())
         );
+    }
+
+    #[test]
+    fn reports_an_in_stream_error_instead_of_an_empty_transcript() {
+        // Bailian answers 200 and puts invalid_parameter_error in the stream.
+        let payload = concat!(
+            "data: {\"error\":{\"code\":\"invalid_parameter_error\",\"message\":\"<400> ",
+            "InternalError.Algo.InvalidParameter: The dedicated task `asr` ... does not ",
+            "support this input.\",\"type\":\"invalid_request_error\"}}\n\n",
+        );
+        let error = parse_sse_transcript(payload).unwrap_err();
+        assert!(
+            error.starts_with("ASR provider rejected the request in-stream"),
+            "{error}"
+        );
+        assert!(error.contains("InvalidParameter"), "{error}");
     }
 
     #[test]
