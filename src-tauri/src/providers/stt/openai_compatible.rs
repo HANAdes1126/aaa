@@ -133,13 +133,16 @@ impl SttProvider for OpenAiCompatibleStt {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            // Tencent Copilot rejects the Whisper upload with code 11101 because
-            // its chat endpoint supports streaming only. Retry once using the
-            // OpenAI audio-in-chat payload; other 4xx errors remain unchanged.
+            // Two known families of chat-only ASR endpoints reject the Whisper
+            // multipart upload: Tencent Copilot (code 11101, streaming-only)
+            // and Bailian's compatible-mode, which has no multipart endpoint
+            // at all ("Required body invalid, please check the request body
+            // format"). Both speak the OpenAI audio-in-chat payload, so retry
+            // once with that; auth and quota errors are left untouched.
             if requires_chat_audio_streaming_retry(status, &body) {
-                let _ = crate::debug_log::append(
-                    "[stt] non-stream request rejected with 11101; retrying chat-audio stream",
-                );
+                let _ = crate::debug_log::append(&format!(
+                    "[stt] multipart rejected status={status}; retrying chat-audio stream",
+                ));
                 return self.transcribe_via_streaming_chat(fallback_request).await;
             }
             let _ = crate::debug_log::append(&format!(
@@ -157,6 +160,17 @@ impl SttProvider for OpenAiCompatibleStt {
 }
 
 fn requires_chat_audio_streaming_retry(status: StatusCode, body: &str) -> bool {
+    // Endpoint-level mismatches: a host that only exposes /chat/completions
+    // answers a multipart upload with 404/405/415 regardless of key validity.
+    if matches!(
+        status,
+        StatusCode::NOT_FOUND
+            | StatusCode::METHOD_NOT_ALLOWED
+            | StatusCode::UNSUPPORTED_MEDIA_TYPE
+    ) {
+        return true;
+    }
+
     if status != StatusCode::BAD_REQUEST {
         return false;
     }
@@ -171,7 +185,14 @@ fn requires_chat_audio_streaming_retry(status: StatusCode, body: &str) -> bool {
             })
         })
         == Some(11101);
-    code_is_11101 || body.contains("Non-stream chat request is currently not supported")
+    if code_is_11101 || body.contains("Non-stream chat request is currently not supported") {
+        return true;
+    }
+
+    // Body-format rejections, e.g. Bailian compatible-mode:
+    // "Required body invalid, please check the request body format."
+    let lowered = body.to_lowercase();
+    lowered.contains("required body invalid") || lowered.contains("request body format")
 }
 
 fn parse_sse_transcript(payload: &str) -> Result<String, &'static str> {
@@ -239,6 +260,30 @@ mod tests {
         assert!(!requires_chat_audio_streaming_retry(
             StatusCode::UNAUTHORIZED,
             r#"{"code":11101}"#,
+        ));
+    }
+
+    #[test]
+    fn retries_on_body_format_rejections() {
+        // Bailian compatible-mode has no multipart endpoint; its 400 is a
+        // body-format complaint, not an auth failure.
+        assert!(requires_chat_audio_streaming_retry(
+            StatusCode::BAD_REQUEST,
+            r#"{"error":{"code":"invalid_request_error","message":"Required body invalid, please check the request body format."}}"#,
+        ));
+        // Endpoint-level mismatches also warrant the chat retry.
+        assert!(requires_chat_audio_streaming_retry(
+            StatusCode::NOT_FOUND,
+            "not found",
+        ));
+        assert!(requires_chat_audio_streaming_retry(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "unsupported media type",
+        ));
+        // Auth/quota problems must not be masked by a doomed retry.
+        assert!(!requires_chat_audio_streaming_retry(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate limited",
         ));
     }
 
