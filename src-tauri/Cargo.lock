@@ -2998,6 +2998,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wasapi",
+ "windows 0.62.2",
  "xcap",
 ]
 

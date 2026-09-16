@@ -82,17 +82,18 @@ where
     if !can_paste() {
         return copied("Dictation was cancelled. Text was copied.", false);
     }
-    let _ = crate::debug_log::append("[dictation-output] posting Command+V with CGEvent");
+    // Platform-neutral: this is Cmd+V on macOS, Ctrl+V on Windows.
+    let _ = crate::debug_log::append("[dictation-output] posting the paste shortcut");
     if let Err(error) = send_paste() {
         let _ = crate::debug_log::append(&format!(
-            "[dictation-output] Command+V failed; text remains copied error={error}"
+            "[dictation-output] paste shortcut failed; text remains copied error={error}"
         ));
         return copied(
             &format!("Text was copied, but automatic paste failed: {error}"),
             true,
         );
     }
-    let _ = crate::debug_log::append("[dictation-output] Command+V posted");
+    let _ = crate::debug_log::append("[dictation-output] paste shortcut posted");
 
     if let Some(previous) = previous_clipboard {
         sleep(Duration::from_millis(140)).await;
@@ -162,7 +163,51 @@ fn send_paste() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Posts Ctrl+V with `SendInput`.
+///
+/// Virtual keys rather than scan codes: with Ctrl held, TranslateMessage turns
+/// VK_V into the paste character, and it stays correct on non-US layouts where
+/// a scan code would describe a different key.
+#[cfg(target_os = "windows")]
 fn send_paste() -> Result<(), String> {
-    Err("Automatic paste is only supported on macOS.".to_string())
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_CONTROL, VK_V,
+    };
+
+    let strokes = [
+        (VK_CONTROL, false),
+        (VK_V, false),
+        (VK_V, true),
+        (VK_CONTROL, true),
+    ];
+    let mut events = [INPUT::default(); 4];
+    for (event, stroke) in events.iter_mut().zip(strokes.iter()) {
+        let (key, up) = *stroke;
+        event.r#type = INPUT_KEYBOARD;
+        event.Anonymous.ki = KEYBDINPUT {
+            wVk: key,
+            wScan: 0,
+            dwFlags: if up {
+                KEYEVENTF_KEYUP
+            } else {
+                Default::default()
+            },
+            time: 0,
+            dwExtraInfo: 0,
+        };
+    }
+
+    let posted = unsafe { SendInput(&events, std::mem::size_of::<INPUT>() as i32) };
+    if posted != events.len() as u32 {
+        return Err(format!(
+            "SendInput posted {posted} of {} events",
+            events.len()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn send_paste() -> Result<(), String> {
+    Err("Automatic paste is only supported on macOS and Windows.".to_string())
 }

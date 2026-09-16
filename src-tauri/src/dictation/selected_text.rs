@@ -128,7 +128,57 @@ fn string_for_range(
     result.downcast::<CFString>().map(|value| value.to_string())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+pub fn capture(_pid: i32) -> Option<String> {
+    // The pid is unused here: Windows reads the selection from the focused
+    // element directly, which is a single global rather than a per-app query.
+    capture_windows().ok().flatten()
+}
+
+/// Reads the selection through UI Automation's text pattern.
+///
+/// Deliberately no clipboard fallback (send Ctrl+C, read, restore). It would
+/// cover more apps, but it destroys whatever the user currently has on the
+/// clipboard if the restore path loses the race, and a selection that quietly
+/// fails to read is a far smaller problem than a clobbered clipboard.
+#[cfg(target_os = "windows")]
+fn capture_windows() -> Result<Option<String>, String> {
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_SERVER, COINIT_MULTITHREADED,
+    };
+    use windows::Win32::UI::Accessibility::{
+        CUIAutomation, IUIAutomation, IUIAutomationTextPattern, UIA_TextPatternId,
+    };
+
+    // UIA is COM, so the calling thread must be initialised first. The call is
+    // reference counted, which makes it cheap on tokio's reused worker
+    // threads; an apartment that is already initialised just returns S_FALSE
+    // and is not an error, so the result is ignored on purpose.
+    let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+
+    let automation: IUIAutomation =
+        unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_SERVER) }
+            .map_err(|error| format!("UI automation is unavailable: {error}"))?;
+    let element = unsafe { automation.GetFocusedElement() }
+        .map_err(|error| format!("No focused element: {error}"))?;
+
+    let pattern: IUIAutomationTextPattern =
+        unsafe { element.GetCurrentPatternAs(UIA_TextPatternId) }
+            .map_err(|error| format!("The focused element has no text pattern: {error}"))?;
+
+    let ranges = unsafe { pattern.GetSelection() }
+        .map_err(|error| format!("Could not read the selection: {error}"))?;
+    if unsafe { ranges.Length() }.unwrap_or(0) <= 0 {
+        return Ok(None);
+    }
+    let text = unsafe { ranges.GetElement(0) }
+        .and_then(|range| unsafe { range.GetText(-1) })
+        .map_err(|error| format!("Could not read the selection text: {error}"))?;
+
+    Ok(normalize(&text.to_string()))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn capture(_pid: i32) -> Option<String> {
     None
 }
@@ -141,6 +191,10 @@ fn normalize(text: &str) -> Option<String> {
     Some(trimmed.chars().take(MAX_SELECTED_TEXT_CHARS).collect())
 }
 
+// Only the macOS path needs it (Windows reads the selection straight out of
+// the text pattern), but the tests exercise it on the host, so keep it for
+// tests too rather than cfg-ing it to macOS alone.
+#[cfg(any(target_os = "macos", test))]
 fn slice_utf16_range(text: &str, location: usize, length: usize) -> Option<String> {
     if length == 0 {
         return None;

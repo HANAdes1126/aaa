@@ -57,3 +57,19 @@ wasapi = "0.24"
 # every Windows version we support; the `wgc` feature would pull in
 # Windows.Graphics.Capture + D3D11 instead.
 xcap = "0.9.8"
+# Pinned to the same major as the copy xcap/wasapi already pull in, so the
+# target compiles one `windows` crate instead of two.
+#
+# Features are the Win32 surface used by the dictation "act on another app"
+# path: Win32_UI_Accessibility (UIA, for reading the selected text),
+# Win32_UI_WindowsAndMessaging (foreground window + focus restore),
+# Win32_UI_Input_KeyboardAndMouse (SendInput for Ctrl+V), Win32_System_Threading
+# (process id / image name), Win32_System_Com (initialising COM before UIA).
+windows = { version = "0.62.2", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Threading",
+  "Win32_UI_Accessibility",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
