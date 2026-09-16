@@ -32,6 +32,7 @@ import {
   type VoiceOverlayPresentationMode,
 } from "./app/voiceOverlay/presentation";
 import { isNearScrollBottom } from "./app/voiceOverlay/autoScroll";
+import { useStealthTooltips } from "./app/useStealthTooltips";
 import type { AssistantMode, AssistantSuggestion } from "./app/types";
 import { useVoiceAsk } from "./app/voiceAsk/useVoiceAsk";
 import { AudioBars } from "./components/AudioBars";
@@ -64,7 +65,9 @@ export function VoiceOverlayApp() {
   const voiceAsk = useVoiceAsk();
   // Called for its side effect: it puts the ghost class and the grey-level
   // variables on `<html>`. Nothing here may add the class a second time.
-  useOverlayAppearance();
+  const appearance = useOverlayAppearance();
+  // Same reason as the island: native tooltips survive content protection.
+  useStealthTooltips(appearance.settings.ghostEnabled);
   const dictationPreviewPhase = import.meta.env.DEV
     ? new URLSearchParams(window.location.search).get("dictation")
     : null;

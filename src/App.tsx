@@ -32,6 +32,7 @@ import { useAutoAssist } from "./app/useAutoAssist";
 import { useMeetlyState } from "./app/useMeetlyState";
 import { useMicMeeting } from "./app/useMicMeeting";
 import { useSessionActions } from "./app/useSessionActions";
+import { useStealthTooltips } from "./app/useStealthTooltips";
 import { useTauriEvents } from "./app/useTauriEvents";
 import { useWindowActions } from "./app/useWindowActions";
 import { AgentWorkspace } from "./components/AgentWorkspace";
@@ -58,6 +59,9 @@ export function App() {
     : null;
 
   useTauriEvents(ctx, autoAssist, session, agent);
+  // Native `title` tooltips are not content-protected, so a hover inside a
+  // stealth window still shows a readable bubble to everyone on the call.
+  useStealthTooltips(appearance.settings.ghostEnabled);
 
   // The island can toggle ghost mode itself; mirror whatever the shared
   // settings currently say so the eye icon and the class never disagree.
