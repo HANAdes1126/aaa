@@ -1,0 +1,2310 @@
+[
+  {
+    "key": "design_lottery",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么去设计数据结构，表格，和接口啥的",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "奖品表存 prize_id、总库存、剩余库存和单次中奖概率，1000 人抢 100 个奖品就是库存 100、概率 30%。",
+      "抽奖接口只做两件事：先判断剩余库存，再按 30% 概率决定这次是否中奖，中奖才真正扣减库存。",
+      "库存扣减用数据库行锁或 Redis 原子操作保证不超卖，条件是剩余库存大于 0，扣减成功才算中奖。",
+      "中奖记录表按 user_id 建唯一索引，防止同一个用户重复中奖或重试导致多发。",
+      "如果实际中奖人数不足 100，说明 30% 只是单次概率而非必中，需要额外的兜底或补抽策略来保证奖品发完。"
+    ],
+    "chars": 48,
+    "total_ms": 3191,
+    "answer": "这是一个带库存上限和单次概率的抽奖系统，核心是把库存扣减做成原子操作，用一个库存行来串行化并发。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "奖品表存 prize_id、总库存、剩余库存和单次中奖概率，1000 人抢 100 个奖品就是库存 100、概率 30%。",
+      "抽奖接口只做两件事：先判断剩余库存，再按 30% 概率决定这次是否中奖，中奖才真正扣减库存。",
+      "库存扣减用数据库行锁或 Redis 原子操作保证不超卖，条件是剩余库存大于 0，扣减成功才算中奖。",
+      "中奖记录表按 user_id 建唯一索引，防止同一个用户重复中奖或重试导致多发。",
+      "如果实际中奖人数不足 100，说明 30% 只是单次概率而非必中，需要额外的兜底或补抽策略来保证奖品发完。"
+    ]
+  },
+  {
+    "key": "design_shorturl",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "设计一个短链服务，说说你的数据结构和表怎么设计",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "发号器生成全局自增 ID，再用 Base62 编码成 6 位短码，6 位能支撑约 568 亿条，配合号段模式或雪花算法避免单点。",
+      "映射表以短码为主键，存长 URL 和创建时间，短码列建唯一索引，回源时按短码等值查询走 B+ 树，O(log n)。",
+      "跳转链路用 Redis 缓存短码到长 URL 的映射，读多写少，缓存命中直接 302，未命中回源数据库再写回，设过期时间防冷数据堆积。",
+      "同一长 URL 是否复用短码是可配策略：复用省空间但无法统计每次访问，不复用则每次生成新码，按业务需求选。",
+      "高并发场景下先查缓存再落库，写路径只写库和异步刷缓存，避免缓存与数据库双写不一致。"
+    ],
+    "chars": 43,
+    "total_ms": 3004,
+    "answer": "这是经典的短链生成问题，核心是把长 URL 映射成一个全局唯一的短码并支持高并发跳转。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "发号器生成全局自增 ID，再用 Base62 编码成 6 位短码，6 位能支撑约 568 亿条，配合号段模式或雪花算法避免单点。",
+      "映射表以短码为主键，存长 URL 和创建时间，短码列建唯一索引，回源时按短码等值查询走 B+ 树，O(log n)。",
+      "跳转链路用 Redis 缓存短码到长 URL 的映射，读多写少，缓存命中直接 302，未命中回源数据库再写回，设过期时间防冷数据堆积。",
+      "同一长 URL 是否复用短码是可配策略：复用省空间但无法统计每次访问，不复用则每次生成新码，按业务需求选。",
+      "高并发场景下先查缓存再落库，写路径只写库和异步刷缓存，避免缓存与数据库双写不一致。"
+    ]
+  },
+  {
+    "key": "design_feed",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "如果让你设计一个朋友圈的信息流，存储和接口你会怎么设计",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "发布时把动态写进内容表，再按发布者关系投递一份 feed_id 到每个好友的收件箱，写入用异步队列削峰。",
+      "收件箱按 user_id 加时间倒序存在 KV 或 Redis 里，只存指针不存内容，拉取时按游标分页取 id 再批量回表。",
+      "大 V 不做全量写扩散，改成读时拉取，发布时只标记版本，由拉取端合并普通好友的收件箱和大 V 的动态流。",
+      "接口分成发布、按 cursor 拉取时间线、以及拉到底时翻历史三条，返回动态内容和作者摘要，分页用游标不用 offset。",
+      "一致性上收件箱允许最终一致，删除和可见性变更走一条补偿消息回删，保证不出现已删动态。"
+    ],
+    "chars": 39,
+    "total_ms": 2755,
+    "answer": "这是经典的朋友圈 Feed 流设计，核心是写扩散加读时聚合，把发布和拉取拆开。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "发布时把动态写进内容表，再按发布者关系投递一份 feed_id 到每个好友的收件箱，写入用异步队列削峰。",
+      "收件箱按 user_id 加时间倒序存在 KV 或 Redis 里，只存指针不存内容，拉取时按游标分页取 id 再批量回表。",
+      "大 V 不做全量写扩散，改成读时拉取，发布时只标记版本，由拉取端合并普通好友的收件箱和大 V 的动态流。",
+      "接口分成发布、按 cursor 拉取时间线、以及拉到底时翻历史三条，返回动态内容和作者摘要，分页用游标不用 offset。",
+      "一致性上收件箱允许最终一致，删除和可见性变更走一条补偿消息回删，保证不出现已删动态。"
+    ]
+  },
+  {
+    "key": "design_gacha_pity",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "如果是9宫格，中间一个按钮，周围8个奖品，稀有概率不一样，然后每个用户每抽一次幸运值都会提高，请问你怎么去设置",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "奖品表存 9 个格子的位置、基础权重和稀有度，基础权重决定初始概率，例如普通各 0.15、稀有 0.02。",
+      "用户幸运值单独存一张表，用 user_id 做键，每次抽完加固定步长，中奖后按奖品档位回退或清零。",
+      "最终权重 = 基础权重 × (1 + 幸运值 × 系数)，稀有奖的系数给大一些，让连续不中时稀有奖的权重涨得更快。",
+      "按最终权重做一次轮盘赌抽格，把结果和抽奖前的幸运值一起落库，保证可追溯和防重复扣次数。",
+      "幸运值要设上限并按用户维度加并发控制，避免多端同时抽把保底冲穿。"
+    ],
+    "chars": 37,
+    "total_ms": 2811,
+    "answer": "这是带概率保底的加权抽奖，核心是把静态权重和用户的动态幸运值合成实时权重。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "奖品表存 9 个格子的位置、基础权重和稀有度，基础权重决定初始概率，例如普通各 0.15、稀有 0.02。",
+      "用户幸运值单独存一张表，用 user_id 做键，每次抽完加固定步长，中奖后按奖品档位回退或清零。",
+      "最终权重 = 基础权重 × (1 + 幸运值 × 系数)，稀有奖的系数给大一些，让连续不中时稀有奖的权重涨得更快。",
+      "按最终权重做一次轮盘赌抽格，把结果和抽奖前的幸运值一起落库，保证可追溯和防重复扣次数。",
+      "幸运值要设上限并按用户维度加并发控制，避免多端同时抽把保底冲穿。"
+    ]
+  },
+  {
+    "key": "design_order_timeout",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "订单创建后30分钟没支付就自动取消，这个功能你怎么设计",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "订单表保留状态和超时时间字段，取消操作必须是带状态条件的更新，只有仍处于待支付才能改成已取消，天然防并发。",
+      "延迟触发用延迟队列或定时扫表都行，延迟消息优先，按订单ID和超时时间投递，量大时按时间分片扫表兜底。",
+      "支付回调里也要做同样的状态条件更新，先到先得，后到的那一方更新影响行数为零就直接返回失败。",
+      "取消成功后释放库存和优惠券，这些释放操作要幂等，重复消费同一条消息不能扣两次库存。",
+      "超时时间以数据库里的创建时间为准，不用消息投递时间，避免消息积压导致取消时间漂移。"
+    ],
+    "chars": 58,
+    "total_ms": 3305,
+    "answer": "这是延迟任务加状态机的问题，核心是把「到点取消」和「用户支付」做成两个互斥的状态流转，谁先拿到订单的当前状态谁生效。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "订单表保留状态和超时时间字段，取消操作必须是带状态条件的更新，只有仍处于待支付才能改成已取消，天然防并发。",
+      "延迟触发用延迟队列或定时扫表都行，延迟消息优先，按订单ID和超时时间投递，量大时按时间分片扫表兜底。",
+      "支付回调里也要做同样的状态条件更新，先到先得，后到的那一方更新影响行数为零就直接返回失败。",
+      "取消成功后释放库存和优惠券，这些释放操作要幂等，重复消费同一条消息不能扣两次库存。",
+      "超时时间以数据库里的创建时间为准，不用消息投递时间，避免消息积压导致取消时间漂移。"
+    ]
+  },
+  {
+    "key": "design_seat_hold",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "设计电影院选座，用户锁座5分钟，超时自动释放，还要避免同一个座位卖给两个人",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "座位状态表按场次加座位号唯一标识，状态在可用、锁定、已售之间流转，锁定时写入占用用户和过期时间。",
+      "锁座用条件更新保证原子性，只有当前状态是可用或锁已过期才能改成锁定，靠数据库唯一约束或行锁让同一座位并发抢座只有一个人成功。",
+      "过期释放不靠定时任务扫全表，而是在读取和下单时判断锁是否过期，过期就视为可用，再用一个低频定时任务兜底清理。",
+      "下单支付成功后把锁定改成已售并清掉过期时间，是整个流程里唯一不可回退的状态变更。",
+      "前端按场次缓存座位图，锁座和下单走带幂等键的接口，避免重复点击生成多把锁。"
+    ],
+    "chars": 45,
+    "total_ms": 3158,
+    "answer": "这是座位库存的带租约预占问题，核心是用带过期时间的临时锁把「选中」和「卖出」分成两个阶段。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "座位状态表按场次加座位号唯一标识，状态在可用、锁定、已售之间流转，锁定时写入占用用户和过期时间。",
+      "锁座用条件更新保证原子性，只有当前状态是可用或锁已过期才能改成锁定，靠数据库唯一约束或行锁让同一座位并发抢座只有一个人成功。",
+      "过期释放不靠定时任务扫全表，而是在读取和下单时判断锁是否过期，过期就视为可用，再用一个低频定时任务兜底清理。",
+      "下单支付成功后把锁定改成已售并清掉过期时间，是整个流程里唯一不可回退的状态变更。",
+      "前端按场次缓存座位图，锁座和下单走带幂等键的接口，避免重复点击生成多把锁。"
+    ]
+  },
+  {
+    "key": "design_coupon_claim",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "一万张优惠券同一时间开抢，每个用户只能领一张，你会怎么设计",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "Redis 里预热券的库存和已领用户集合，用 Lua 脚本把判断库存、判断是否已领、扣减、记录用户四步做成一次原子操作，避免并发超发。",
+      "数据库对 user_id 加唯一索引兜底，即使 Redis 出问题重复请求也只会有一条记录写入成功。",
+      "异步落库：抢到资格的请求发消息队列，由消费者慢速写订单，前端先返回排队中，避免数据库被瞬时流量打垮。",
+      "请求入口用网关限流加券ID维度排队，同一用户短时间重复点击直接拦截，库存扣到零后立即把后续请求短路掉。",
+      "库存回补和已领用户集合设置过期时间，未支付超时的券通过延迟消息回补到 Redis，保持一致。"
+    ],
+    "chars": 49,
+    "total_ms": 2885,
+    "answer": "这是秒杀场景下的超卖和一人一单问题，核心是用 Redis 原子扣减挡住流量、数据库兜底做唯一约束。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "Redis 里预热券的库存和已领用户集合，用 Lua 脚本把判断库存、判断是否已领、扣减、记录用户四步做成一次原子操作，避免并发超发。",
+      "数据库对 user_id 加唯一索引兜底，即使 Redis 出问题重复请求也只会有一条记录写入成功。",
+      "异步落库：抢到资格的请求发消息队列，由消费者慢速写订单，前端先返回排队中，避免数据库被瞬时流量打垮。",
+      "请求入口用网关限流加券ID维度排队，同一用户短时间重复点击直接拦截，库存扣到零后立即把后续请求短路掉。",
+      "库存回补和已领用户集合设置过期时间，未支付超时的券通过延迟消息回补到 Redis，保持一致。"
+    ]
+  },
+  {
+    "key": "design_chunk_upload",
+    "want": "design",
+    "domain": "存储",
+    "state": "required",
+    "question": "设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "上传会话表按 upload_id 记录文件哈希、分片大小、总分片数、已完成分片集合和过期时间，元数据落库，分片内容落对象存储。",
+      "上传前先用文件内容哈希加文件大小查一次，命中已完成的文件就直接返回文件标识，实现秒传，不重复上传。",
+      "接口拆成创建会话、幂等上传单个分片、查询会话进度、校验后合并四步；分片上传以 upload_id 加分片序号做幂等键，重试覆盖同一分片不产生重复数据。",
+      "合并用状态机加条件更新，从 uploading 转到 merging 再到 done，只有一个请求能拿到合并权，避免重复合并出多份文件。",
+      "失败靠客户端重传缺失分片，服务端提供未完成分片列表；过期会话由定时任务清理分片和元数据，防止存储泄漏。"
+    ],
+    "chars": 44,
+    "total_ms": 2528,
+    "answer": "这是分片上传加最终合并，核心是把一次上传建模成可恢复的会话，并用文件内容哈希做秒传判定。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "上传会话表按 upload_id 记录文件哈希、分片大小、总分片数、已完成分片集合和过期时间，元数据落库，分片内容落对象存储。",
+      "上传前先用文件内容哈希加文件大小查一次，命中已完成的文件就直接返回文件标识，实现秒传，不重复上传。",
+      "接口拆成创建会话、幂等上传单个分片、查询会话进度、校验后合并四步；分片上传以 upload_id 加分片序号做幂等键，重试覆盖同一分片不产生重复数据。",
+      "合并用状态机加条件更新，从 uploading 转到 merging 再到 done，只有一个请求能拿到合并权，避免重复合并出多份文件。",
+      "失败靠客户端重传缺失分片，服务端提供未完成分片列表；过期会话由定时任务清理分片和元数据，防止存储泄漏。"
+    ]
+  },
+  {
+    "key": "design_chat_unread",
+    "want": "design",
+    "domain": "即时通信",
+    "state": "required",
+    "question": "聊天系统的未读数怎么设计，要求手机和电脑多端登录后最终一致",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "按会话维护一个单调递增的消息序号 seq，Redis 里每个用户一条 Hash，字段是 sessionId 到该用户已读的最大 seq。",
+      "未读数不存储，读的时候用会话当前最大 seq 减已读 seq 得到；这样不会出现多端各自加减导致计数漂移。",
+      "用户在某端已读时，只上报 sessionId 和 maxSeq，服务端用 Lua 脚本做 max 更新，保证只增不减、幂等可重放。",
+      "多端一致靠会话语义做收敛：消息落库带全局递增 seq，读位点用 max 合并，晚到的旧上报不会把已读回退。",
+      "把已读位点持久化到 MySQL 做冷备并设 TTL，Redis 丢失时可按最近位点重建，未读数偶发偏高只是不精确，不会错乱。"
+    ],
+    "chars": 63,
+    "total_ms": 3026,
+    "answer": "这是多端未读计数的最终一致问题，核心是每个会话只存一个递增的已读位点，未读数由最新消息序号减去已读位点算出来，不直接维护计数。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "按会话维护一个单调递增的消息序号 seq，Redis 里每个用户一条 Hash，字段是 sessionId 到该用户已读的最大 seq。",
+      "未读数不存储，读的时候用会话当前最大 seq 减已读 seq 得到；这样不会出现多端各自加减导致计数漂移。",
+      "用户在某端已读时，只上报 sessionId 和 maxSeq，服务端用 Lua 脚本做 max 更新，保证只增不减、幂等可重放。",
+      "多端一致靠会话语义做收敛：消息落库带全局递增 seq，读位点用 max 合并，晚到的旧上报不会把已读回退。",
+      "把已读位点持久化到 MySQL 做冷备并设 TTL，Redis 丢失时可按最近位点重建，未读数偶发偏高只是不精确，不会错乱。"
+    ]
+  },
+  {
+    "key": "design_payment_callback",
+    "want": "design",
+    "domain": "支付",
+    "state": "required",
+    "question": "第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "回调先按渠道交易号建唯一索引写回调流水表，重复请求直接命中唯一约束丢弃，保证幂等。",
+      "订单表带版本号做状态机流转，只允许待支付到已支付这类合法迁移，用条件更新挡住乱序的旧回调，只增不减。",
+      "回调只更新状态并投递消息，发货等后续动作异步消费，避免在回调里做重业务被渠道重试拖垮。",
+      "丢失靠定时对账补：拉渠道账单比对本地订单，差异单走主动查询接口补单，而非等回调。",
+      "回调入口限流加验签，异常落死信表告警，人工与自动补偿都有兜底。"
+    ],
+    "chars": 49,
+    "total_ms": 2842,
+    "answer": "这是支付回调的幂等处理加对账补单，核心是把每次回调先落库去重，再用状态机收敛订单，缺口交给对账补。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "回调先按渠道交易号建唯一索引写回调流水表，重复请求直接命中唯一约束丢弃，保证幂等。",
+      "订单表带版本号做状态机流转，只允许待支付到已支付这类合法迁移，用条件更新挡住乱序的旧回调，只增不减。",
+      "回调只更新状态并投递消息，发货等后续动作异步消费，避免在回调里做重业务被渠道重试拖垮。",
+      "丢失靠定时对账补：拉渠道账单比对本地订单，差异单走主动查询接口补单，而非等回调。",
+      "回调入口限流加验签，异常落死信表告警，人工与自动补偿都有兜底。"
+    ]
+  },
+  {
+    "key": "design_leaderboard",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "设计一个每天重置的游戏排行榜，需要查前100名和任意用户当前排名",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "用 Redis ZSET 存当日榜，key 带日期如 rank:20240101，member 是用户ID，score 是分数，ZINCRBY 累加分数。",
+      "查前100名直接 ZREVRANGE key 0 99；查任意用户排名用 ZREVRANK，返回下标即排名，两者都是 O(log n)。",
+      "跨天切换用按日期命名新 key，旧 key 设 TTL 自动过期，避免凌晨批量删除造成卡顿。",
+      "分数相同时按达到该分数的先后或用户ID做二级排序，保证名次唯一且稳定。",
+      "全量榜和当日榜分开存，若需要历史某天的排名，按同样的日期 key 直接查即可。"
+    ],
+    "chars": 50,
+    "total_ms": 2526,
+    "answer": "这是带过期语义的实时排行榜，核心是把一天的分数建模成按日期分片的排行榜，同时维护全量和当日两份结构。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "用 Redis ZSET 存当日榜，key 带日期如 rank:20240101，member 是用户ID，score 是分数，ZINCRBY 累加分数。",
+      "查前100名直接 ZREVRANGE key 0 99；查任意用户排名用 ZREVRANK，返回下标即排名，两者都是 O(log n)。",
+      "跨天切换用按日期命名新 key，旧 key 设 TTL 自动过期，避免凌晨批量删除造成卡顿。",
+      "分数相同时按达到该分数的先后或用户ID做二级排序，保证名次唯一且稳定。",
+      "全量榜和当日榜分开存，若需要历史某天的排名，按同样的日期 key 直接查即可。"
+    ]
+  },
+  {
+    "key": "design_rate_limit",
+    "want": "design",
+    "domain": "网关",
+    "state": "required",
+    "question": "多实例服务要限制每个用户每分钟最多请求100次，这个限流功能怎么设计",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "按 userId 加时间窗口做 key，用 Lua 脚本在 Redis 里原子地读-判断-自增，避免多实例之间读改写竞态。",
+      "每个实例请求到达时先查 Redis，超出 100 次直接返回 429，不把压力透传到下游服务。",
+      "窗口 key 设 TTL 自动过期，比如固定窗口就是 60 秒，滑动窗口用 zset 或分段计数减少临界突刺。",
+      "Redis 不可用时要有降级策略，比如本地令牌桶兜底或直接放行，保证限流组件本身不成为单点故障。",
+      "限流维度可以扩展成 userId 加接口或 IP，规则和阈值放配置中心，方便动态调整而不用重启。"
+    ],
+    "chars": 49,
+    "total_ms": 2640,
+    "answer": "这是一个分布式限流问题，核心是把单机令牌桶换成以用户为维度的共享计数，用 Redis 做中心存储。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "按 userId 加时间窗口做 key，用 Lua 脚本在 Redis 里原子地读-判断-自增，避免多实例之间读改写竞态。",
+      "每个实例请求到达时先查 Redis，超出 100 次直接返回 429，不把压力透传到下游服务。",
+      "窗口 key 设 TTL 自动过期，比如固定窗口就是 60 秒，滑动窗口用 zset 或分段计数减少临界突刺。",
+      "Redis 不可用时要有降级策略，比如本地令牌桶兜底或直接放行，保证限流组件本身不成为单点故障。",
+      "限流维度可以扩展成 userId 加接口或 IP，规则和阈值放配置中心，方便动态调整而不用重启。"
+    ]
+  },
+  {
+    "key": "design_feature_flag",
+    "want": "design",
+    "domain": "发布系统",
+    "state": "required",
+    "question": "设计一个灰度开关系统，能按用户百分比放量、指定白名单，并支持一键回滚",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "规则模型：每个开关存一份规则列表，每条规则由匹配条件（用户 ID、百分比区间、白名单、地域等）和开关值组成，按顺序求值，第一条命中的生效；白名单本质就是优先级最高的一条精确匹配规则。",
+      "百分比分桶必须稳定：用 userId 和一个固定 salt 做哈希取模落到 0-9999 的槽位，再和阈值比较，这样同一用户每次请求结果一致、不同开关之间又不相关，扩量只是调阈值不洗牌。",
+      "配置持久化：开关和规则落在配置库并全量缓存在服务端本地，推送用长轮询或 watch 通知失效重建，保证读取是内存操作、不依赖调用下游。",
+      "回滚：把开关状态改成全关并推一条高优先级规则，一次配置变更即可生效；每次变更记录操作人和前后快照，回滚就是把这版快照重新发布。",
+      "版本与安全：配置带单调递增版本号，客户端按版本更新避免乱序覆盖；变更走审计日志，同时监控开关状态和实际流量比例是否一致，防止规则写错导致全量放量。"
+    ],
+    "chars": 64,
+    "total_ms": 3208,
+    "answer": "这是特性开关（feature flag）系统，核心是把每个开关的投放规则外置成配置，让业务代码只问一次“这个用户走不走新逻辑”。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "规则模型：每个开关存一份规则列表，每条规则由匹配条件（用户 ID、百分比区间、白名单、地域等）和开关值组成，按顺序求值，第一条命中的生效；白名单本质就是优先级最高的一条精确匹配规则。",
+      "百分比分桶必须稳定：用 userId 和一个固定 salt 做哈希取模落到 0-9999 的槽位，再和阈值比较，这样同一用户每次请求结果一致、不同开关之间又不相关，扩量只是调阈值不洗牌。",
+      "配置持久化：开关和规则落在配置库并全量缓存在服务端本地，推送用长轮询或 watch 通知失效重建，保证读取是内存操作、不依赖调用下游。",
+      "回滚：把开关状态改成全关并推一条高优先级规则，一次配置变更即可生效；每次变更记录操作人和前后快照，回滚就是把这版快照重新发布。",
+      "版本与安全：配置带单调递增版本号，客户端按版本更新避免乱序覆盖；变更走审计日志，同时监控开关状态和实际流量比例是否一致，防止规则写错导致全量放量。"
+    ]
+  },
+  {
+    "key": "design_search_suggest",
+    "want": "design",
+    "domain": "搜索",
+    "state": "required",
+    "question": "搜索框输入前缀时要在10毫秒内返回热门联想词，这个功能怎么设计",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "用 Trie 存词表，每个节点保存经过该前缀的 top-K 热词，查询前缀时直接取该节点的缓存列表，不做实时聚合。",
+      "热词榜离线或准实时从搜索日志统计，按小时或分钟更新，更新时重建或增量刷新 Trie 节点的 top-K。",
+      "Trie 常驻内存并预加载，多实例部署，查询走本地内存不经过数据库，保证 P99 在 10ms 内。",
+      "用 Redis 或本地缓存兜住热点前缀，加节流和结果长度上限，防止长前缀和恶意请求打满内存。",
+      "更新用双缓冲切换：新版本 Trie 构建好后原子替换，避免更新时读到半成品数据。"
+    ],
+    "chars": 58,
+    "total_ms": 2754,
+    "answer": "这是搜索自动补全（autocomplete/typeahead），核心是把前缀补全从在线查询变成内存里的前缀树查询。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "用 Trie 存词表，每个节点保存经过该前缀的 top-K 热词，查询前缀时直接取该节点的缓存列表，不做实时聚合。",
+      "热词榜离线或准实时从搜索日志统计，按小时或分钟更新，更新时重建或增量刷新 Trie 节点的 top-K。",
+      "Trie 常驻内存并预加载，多实例部署，查询走本地内存不经过数据库，保证 P99 在 10ms 内。",
+      "用 Redis 或本地缓存兜住热点前缀，加节流和结果长度上限，防止长前缀和恶意请求打满内存。",
+      "更新用双缓冲切换：新版本 Trie 构建好后原子替换，避免更新时读到半成品数据。"
+    ]
+  },
+  {
+    "key": "design_comment_thread",
+    "want": "design",
+    "domain": "内容",
+    "state": "required",
+    "question": "设计评论和二级回复功能，还要支持热度排序、删除和分页",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "评论表用 parent_id 加 root_id 和 path 记录层级，只允许两级：顶级评论 parent_id 为空，回复挂到顶级评论上，回复的回复归到同一个 root_id 下并以 @ 标注被回复人。",
+      "持久化存 comment 表，字段包含 id、root_id、parent_id、content、user_id、floor、状态和创建时间，按 root_id 建索引，删除用软删除标记状态，保留楼层回复结构不塌陷。",
+      "热度排序在写入时算一个 score，比如点赞数除以时间衰减，按 root_id 加 score 建联合索引，顶级评论按 score 分页，每页再一次性把这一页的回复查出来，避免 N+1。",
+      "分页对顶级评论用游标（score 加 id 作为 offset）而不是深翻页，回复数量多时只展示前几条加热度展开，展开时用时间或热度游标续拉。",
+      "删除做权限校验后用软删除，如果删的是顶级评论而其下还有回复，前端展示为已删除但保留回复，硬删除由异步任务按保留期清理。"
+    ],
+    "chars": 41,
+    "total_ms": 3391,
+    "answer": "这是经典的树形评论模型，核心是把无限层级拍平成一张带路径的表，用路径做排序和分页。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "评论表用 parent_id 加 root_id 和 path 记录层级，只允许两级：顶级评论 parent_id 为空，回复挂到顶级评论上，回复的回复归到同一个 root_id 下并以 @ 标注被回复人。",
+      "持久化存 comment 表，字段包含 id、root_id、parent_id、content、user_id、floor、状态和创建时间，按 root_id 建索引，删除用软删除标记状态，保留楼层回复结构不塌陷。",
+      "热度排序在写入时算一个 score，比如点赞数除以时间衰减，按 root_id 加 score 建联合索引，顶级评论按 score 分页，每页再一次性把这一页的回复查出来，避免 N+1。",
+      "分页对顶级评论用游标（score 加 id 作为 offset）而不是深翻页，回复数量多时只展示前几条加热度展开，展开时用时间或热度游标续拉。",
+      "删除做权限校验后用软删除，如果删的是顶级评论而其下还有回复，前端展示为已删除但保留回复，硬删除由异步任务按保留期清理。"
+    ]
+  },
+  {
+    "key": "design_job_dag",
+    "want": "design",
+    "domain": "调度",
+    "state": "required",
+    "question": "设计一个有任务依赖关系的批处理调度系统，失败可以重试但不能重复执行成功任务",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "任务定义表存 DAG 结构：task_id、依赖的任务列表、重试次数上限；调度前按入度做拓扑排序，只有所有前置任务成功才把当前任务置为就绪。",
+      "任务实例表按 batch_id + task_id 记录状态（等待、运行中、成功、失败）、尝试次数和幂等键，这个表是判定是否重复执行的唯一依据。",
+      "每个任务执行前用条件更新把状态从等待原子地改成运行中，只有更新成功的那一个调度器实例才真正执行，避免并发重复触发。",
+      "任务是幂等的：执行结果先写临时位置，成功后原子提交并记录幂等键，重试时发现该键已提交就直接跳过，不重复产生副作用。",
+      "失败任务只重试自身和它的下游，已成功的任务不再进入调度；超过重试上限的任务标记为终止，并阻塞其下游，由人工或补偿逻辑介入。"
+    ],
+    "chars": 63,
+    "total_ms": 2935,
+    "answer": "这是带依赖的 DAG 工作流调度，属于有向无环图任务编排加幂等执行，核心是把每个任务的执行状态持久化，让重试只对失败分支生效。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "任务定义表存 DAG 结构：task_id、依赖的任务列表、重试次数上限；调度前按入度做拓扑排序，只有所有前置任务成功才把当前任务置为就绪。",
+      "任务实例表按 batch_id + task_id 记录状态（等待、运行中、成功、失败）、尝试次数和幂等键，这个表是判定是否重复执行的唯一依据。",
+      "每个任务执行前用条件更新把状态从等待原子地改成运行中，只有更新成功的那一个调度器实例才真正执行，避免并发重复触发。",
+      "任务是幂等的：执行结果先写临时位置，成功后原子提交并记录幂等键，重试时发现该键已提交就直接跳过，不重复产生副作用。",
+      "失败任务只重试自身和它的下游，已成功的任务不再进入调度；超过重试上限的任务标记为终止，并阻塞其下游，由人工或补偿逻辑介入。"
+    ]
+  },
+  {
+    "key": "design_album_share",
+    "want": "design",
+    "domain": "权限",
+    "state": "required",
+    "question": "设计相册分享功能，链接可以设置过期时间和访问密码，用户还能随时撤销分享",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "分享记录表以随机 share_id 为主键，存相册 ID、过期时间、密码哈希、状态和创建者。",
+      "分享链接用不可猜测的 token 而不是相册 ID，密码只存加盐哈希，校验通过后再签发短时访问凭证。",
+      "相册内容本身仍走原鉴权链路，分享只授予该条记录的读权限，不复制图片也不放开相册整体权限。",
+      "撤销和过期都是把记录置为失效，判定在每次访问时做，已发出的凭证 TTL 设短，避免撤销后仍能访问。",
+      "撤销做幂等更新，过期记录由定时任务或访问时惰性清理，分享的访问不写回主相册。"
+    ],
+    "chars": 43,
+    "total_ms": 2561,
+    "answer": "这本质是带过期和鉴权的资源访问令牌问题，核心是把每一次分享建模成一条可撤销的授权记录。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "分享记录表以随机 share_id 为主键，存相册 ID、过期时间、密码哈希、状态和创建者。",
+      "分享链接用不可猜测的 token 而不是相册 ID，密码只存加盐哈希，校验通过后再签发短时访问凭证。",
+      "相册内容本身仍走原鉴权链路，分享只授予该条记录的读权限，不复制图片也不放开相册整体权限。",
+      "撤销和过期都是把记录置为失效，判定在每次访问时做，已发出的凭证 TTL 设短，避免撤销后仍能访问。",
+      "撤销做幂等更新，过期记录由定时任务或访问时惰性清理，分享的访问不写回主相册。"
+    ]
+  },
+  {
+    "key": "design_local_lru_ttl",
+    "want": "design",
+    "domain": "本地组件",
+    "state": "local_only",
+    "question": "设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求你写代码",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "数据结构用 HashMap 存 key 到链表节点的映射，双向链表按访问顺序排列，get 命中后把节点移到头部，put 超容量时淘汰尾部节点,这样 get 和 put 都是 O(1)。",
+      "过期时间在每个节点上存 expireAt 时间戳，不用定时器扫描，而是惰性删除：get 时先判断是否过期，过期就删掉返回未命中；再加一个后台线程或淘汰时的定期清理，防止死数据占满内存。",
+      "并发控制按并发量选：低并发用一把 ReentrantLock 简单可靠；高并发用分段锁，把 key 哈希到 N 个段，每段一把锁加独立 LRU 链表，把锁竞争降到 1/N。",
+      "淘汰和过期删除都要在持有对应段锁的情况下做，链表指针的修改不能裸奔；读操作可以用读写锁或把访问顺序更新放到写锁里，避免读到半改的链表结构。",
+      "容量和 TTL 是构造参数，不追求跨进程一致——进程内缓存就是本地副本，多实例之间本来就可能不一致，接受这个前提再谈性能和命中率。"
+    ],
+    "chars": 65,
+    "total_ms": 2909,
+    "answer": "这是带 TTL 和并发控制的 LRU 缓存，核心是用哈希表加双向链表保证 O(1) 访问，再用分段锁或分段结构把并发冲突降到最低。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "数据结构用 HashMap 存 key 到链表节点的映射，双向链表按访问顺序排列，get 命中后把节点移到头部，put 超容量时淘汰尾部节点,这样 get 和 put 都是 O(1)。",
+      "过期时间在每个节点上存 expireAt 时间戳，不用定时器扫描，而是惰性删除：get 时先判断是否过期，过期就删掉返回未命中；再加一个后台线程或淘汰时的定期清理，防止死数据占满内存。",
+      "并发控制按并发量选：低并发用一把 ReentrantLock 简单可靠；高并发用分段锁，把 key 哈希到 N 个段，每段一把锁加独立 LRU 链表，把锁竞争降到 1/N。",
+      "淘汰和过期删除都要在持有对应段锁的情况下做，链表指针的修改不能裸奔；读操作可以用读写锁或把访问顺序更新放到写锁里，避免读到半改的链表结构。",
+      "容量和 TTL 是构造参数，不追求跨进程一致——进程内缓存就是本地副本，多实例之间本来就可能不一致，接受这个前提再谈性能和命中率。"
+    ]
+  },
+  {
+    "key": "design_virtual_list",
+    "want": "design",
+    "domain": "前端",
+    "state": "none",
+    "question": "前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "用 position 加 translateY 撑出总高度作为滚动占位，总高由已测高度之和加上未测项的估算高度累加得到。",
+      "每个 item 渲染一次后测量真实高度，写进以 id 为 key 的高度缓存，滑动时按前缀和数组二分找到视口起点，再做前后各缓冲几条的 overscan。",
+      "高度没测出来前用估算值占位，先给固定最小高度或骨架屏，避免滚动条跳动和位置回弹。",
+      "滚动用 requestAnimationFrame 或 IntersectionObserver 驱动，只更新可见区，重计算不放进滚动事件里同步做。",
+      "列表尺寸变化或缓存失效时按批重新测量，并用 key 保持项与数据稳定对应，避免复用时高度错配。"
+    ],
+    "chars": 56,
+    "total_ms": 3389,
+    "answer": "这是虚拟滚动问题，核心是不按数据量渲染 DOM，只渲染视口内的可见项，高度不固定就让每项自己撑开并缓存实测高度。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "用 position 加 translateY 撑出总高度作为滚动占位，总高由已测高度之和加上未测项的估算高度累加得到。",
+      "每个 item 渲染一次后测量真实高度，写进以 id 为 key 的高度缓存，滑动时按前缀和数组二分找到视口起点，再做前后各缓冲几条的 overscan。",
+      "高度没测出来前用估算值占位，先给固定最小高度或骨架屏，避免滚动条跳动和位置回弹。",
+      "滚动用 requestAnimationFrame 或 IntersectionObserver 驱动，只更新可见区，重计算不放进滚动事件里同步做。",
+      "列表尺寸变化或缓存失效时按批重新测量，并用 key 保持项与数据稳定对应，避免复用时高度错配。"
+    ]
+  },
+  {
+    "key": "design_id_generator",
+    "want": "design",
+    "domain": "基础设施",
+    "state": "optional",
+    "question": "设计一个分布式唯一 ID 生成器，要求趋势递增、高可用，而且不能依赖单机自增数据库",
+    "sample": 1,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "推荐 Snowflake 式的 64 位结构：1 位符号、41 位毫秒时间戳、10 位机器 ID、12 位序列号，单机每毫秒可出 4096 个 ID，时间戳在高位天然趋势递增。",
+      "机器 ID 的分配是唯一需要协调的地方，用 ZooKeeper 或 etcd 的临时顺序节点在启动时抢占并持有租约，避免两台机器拿到同一个 workerId。",
+      "时钟回拨是最关键的故障边界：回拨幅度小就自旋等待追平，幅度大就拒绝发号并告警，绝不能直接复用旧时间戳，否则会撞号。",
+      "高可用靠本地内存发号不加锁，不落盘，实例无状态可随意扩缩，单点故障只影响 1/N 的吞吐；如果完全不接受时钟依赖，可以退化到号段模式，用数据库批量领取 step 段，代价是 ID 不再严格递增。",
+      "机器 ID 回收要等租约过期，超过 1024 个实例时把 workerId 拆成机房位加实例位，或改用业务前缀隔离。"
+    ],
+    "chars": 55,
+    "total_ms": 3369,
+    "answer": "这是分布式 ID 生成器，本质是把全局唯一性拆成\"机器标识 + 本地单调序列\"，趋势递增靠时间位在最前面保证。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "推荐 Snowflake 式的 64 位结构：1 位符号、41 位毫秒时间戳、10 位机器 ID、12 位序列号，单机每毫秒可出 4096 个 ID，时间戳在高位天然趋势递增。",
+      "机器 ID 的分配是唯一需要协调的地方，用 ZooKeeper 或 etcd 的临时顺序节点在启动时抢占并持有租约，避免两台机器拿到同一个 workerId。",
+      "时钟回拨是最关键的故障边界：回拨幅度小就自旋等待追平，幅度大就拒绝发号并告警，绝不能直接复用旧时间戳，否则会撞号。",
+      "高可用靠本地内存发号不加锁，不落盘，实例无状态可随意扩缩，单点故障只影响 1/N 的吞吐；如果完全不接受时钟依赖，可以退化到号段模式，用数据库批量领取 step 段，代价是 ID 不再严格递增。",
+      "机器 ID 回收要等租约过期，超过 1024 个实例时把 workerId 拆成机房位加实例位，或改用业务前缀隔离。"
+    ]
+  },
+  {
+    "key": "coding_quicksort",
+    "want": "coding",
+    "domain": "算法",
+    "state": "none",
+    "question": "来手写一个快速排序吧，用 Java",
+    "sample": 1,
+    "kind": "coding",
+    "has_code": true,
+    "bullet_count": 0,
+    "bullets": [],
+    "chars": 627,
+    "total_ms": 2092,
+    "answer": "分治，选基准把数组分成两半再递归，平均 O(n log n)，空间 O(log n)。\n```java\npublic void quickSort(int[] nums, int left, int right) {\n    if (left >= right) {\n        return;\n    }\n    int pivot = nums[left];\n    int i = left;\n    int j = right;\n    while (i < j) {\n        // 先从右往左找第一个小于基准的数\n        while (i < j && nums[j] >= pivot) {\n            j--;\n        }\n        nums[i] = nums[j];\n        // 再从左往右找第一个大于基准的数\n        while (i < j && nums[i] <= pivot) {\n            i++;\n        }\n        nums[j] = nums[i];\n    }\n    // 基准归位，此时 i 左侧都小于等于它，右侧都大于等于它\n    nums[i] = pivot;\n    quickSort(nums, left, i - 1);\n    quickSort(nums, i + 1, right);\n}\n```",
+    "raw_bullet_count": 0,
+    "app_bullets": []
+  },
+  {
+    "key": "coding_lru",
+    "want": "coding",
+    "domain": "算法",
+    "state": "none",
+    "question": "实现一个 LRU 缓存，说一下思路然后写出来",
+    "sample": 1,
+    "kind": "coding",
+    "has_code": true,
+    "bullet_count": 0,
+    "bullets": [],
+    "chars": 1881,
+    "total_ms": 3020,
+    "answer": "用哈希表加双向链表：哈希表 O(1) 定位节点，双向链表维护访问顺序，头部最新、尾部最旧，get 和 put 都是 O(1)，空间 O(capacity)。\n```java\nimport java.util.HashMap;\nimport java.util.Map;\n\npublic class LRUCache {\n\n    // 双向链表节点，同时存 key 才能在淘汰时从 map 中删除\n    class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final int capacity;\n    private final Map<Integer, Node> map;\n    // 虚拟头尾节点，省掉边界判断\n    private final Node head;\n    private final Node tail;\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        // 访问过就移到头部表示最近使用\n        moveToHead(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            node.value = value;\n            moveToHead(node);\n            return;\n        }\n        // 容量满了先淘汰尾部最久未使用的节点\n        if (map.size() == capacity) {\n            Node removed = tail.prev;\n            removeNode(removed);\n            map.remove(removed.key);\n        }\n        Node newNode = new Node(key, value);\n        map.put(key, newNode);\n        addToHead(newNode);\n    }\n\n    private void moveToHead(Node node) {\n        removeNode(node);\n        addToHead(node);\n    }\n\n    private void removeNode(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n\n    private void addToHead(Node node) {\n        node.next = head.next;\n        node.prev = head;\n        head.next.prev = node;\n        head.next = node;\n    }\n}\n```",
+    "raw_bullet_count": 0,
+    "app_bullets": []
+  },
+  {
+    "key": "coding_design_lru",
+    "want": "coding",
+    "domain": "算法",
+    "state": "none",
+    "question": "设计一个 LRU 缓存，并用 Java 完整实现 get 和 put",
+    "sample": 1,
+    "kind": "coding",
+    "has_code": true,
+    "bullet_count": 0,
+    "bullets": [],
+    "chars": 1866,
+    "total_ms": 2876,
+    "answer": "用 HashMap 加双向链表实现，哈希表 O(1) 定位节点，链表头放最近访问、尾放最久未用，get 和 put 都是 O(1)，空间 O(capacity)。\n```java\nimport java.util.HashMap;\nimport java.util.Map;\n\npublic class LRUCache {\n\n    // 双向链表节点\n    class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final int capacity;\n    private final Map<Integer, Node> map;\n    // 虚拟头尾节点，省去边界判空\n    private final Node head;\n    private final Node tail;\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        // 访问过就移到头部\n        moveToHead(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            node.value = value;\n            moveToHead(node);\n            return;\n        }\n        // 容量满了先淘汰尾部最久未使用的节点\n        if (map.size() == capacity) {\n            Node lru = tail.prev;\n            removeNode(lru);\n            map.remove(lru.key);\n        }\n        Node newNode = new Node(key, value);\n        map.put(key, newNode);\n        addToHead(newNode);\n    }\n\n    // 把节点从当前位置摘下来，插到头部\n    private void moveToHead(Node node) {\n        removeNode(node);\n        addToHead(node);\n    }\n\n    private void removeNode(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n\n    private void addToHead(Node node) {\n        node.next = head.next;\n        node.prev = head;\n        head.next.prev = node;\n        head.next = node;\n    }\n}\n```",
+    "raw_bullet_count": 0,
+    "app_bullets": []
+  },
+  {
+    "key": "concept_index",
+    "want": "knowledge",
+    "domain": "数据库",
+    "state": "none",
+    "question": "说说 MySQL 的聚簇索引和非聚簇索引有什么区别",
+    "sample": 1,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "一张表只能有一个聚簇索引，InnoDB 没显式主键时会用唯一非空索引，再没有就隐藏一个 6 字节 row_id。",
+      "非聚簇索引因为要回表，范围扫描时可能变成大量随机 IO，这也是它比聚簇索引慢的主要原因。"
+    ],
+    "chars": 161,
+    "total_ms": 2794,
+    "answer": "区别在于数据和索引是不是存在一起：聚簇索引的叶子节点直接就是整行数据，InnoDB 里主键索引就是聚簇索引，所以按主键查一次 B+ 树就拿到行；非聚簇索引的叶子节点存的是索引列加主键值，要拿完整行还得再回聚簇索引查一次，这就是回表。所以非聚簇索引也叫二级索引，代价是多一次 B+ 树查找，能用覆盖索引避免回表就是这个原因。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "一张表只能有一个聚簇索引，InnoDB 没显式主键时会用唯一非空索引，再没有就隐藏一个 6 字节 row_id。",
+      "非聚簇索引因为要回表，范围扫描时可能变成大量随机 IO，这也是它比聚簇索引慢的主要原因。"
+    ]
+  },
+  {
+    "key": "method_cpu",
+    "want": "knowledge",
+    "domain": "排障",
+    "state": "none",
+    "question": "线上 Java 服务 CPU 突然到 100%，你会怎么排查",
+    "sample": 1,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "如果是 GC 线程占用高，就配合 jstat -gcutil 看 FGC 频率和老年区，那问题在内存泄漏而不是代码。",
+      "怀疑负载高时可以先用 arthas 的 dashboard 和 profiler 在线看热点，不用重启也能拿到火焰图。"
+    ],
+    "chars": 147,
+    "total_ms": 2135,
+    "answer": "我先在服务器上用 top -Hp 找到占用最高的线程号，再把它转成十六进制，用 jstack 打线程栈去比对 nid，直接定位到是哪段代码在烧 CPU。线上的话我会连续打两三次栈，看同一个方法是否反复出现在栈顶，是的话基本就是它了。定位到之后再看是死循环、频繁 GC 还是正则回溯这类具体原因。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "如果是 GC 线程占用高，就配合 jstat -gcutil 看 FGC 频率和老年区，那问题在内存泄漏而不是代码。",
+      "怀疑负载高时可以先用 arthas 的 dashboard 和 profiler 在线看热点，不用重启也能拿到火焰图。"
+    ]
+  },
+  {
+    "key": "method_cache_breakdown",
+    "want": "knowledge",
+    "domain": "缓存",
+    "state": "none",
+    "question": "缓存击穿是什么，常见解决办法有哪些",
+    "sample": 1,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "互斥锁实现上要注意锁超时和拿到锁后二次检查缓存，否则会重复回源。",
+      "热点 key 提前预热并设置随机过期时间，可以避免同一时刻集体失效。"
+    ],
+    "chars": 114,
+    "total_ms": 2313,
+    "answer": "缓存击穿是某个热点 key 过期的瞬间，大量并发请求同时穿透到数据库，把库打挂。常见解法有两种：一是互斥锁，只让一个线程去查库并回填，其他线程等结果；二是热点 key 逻辑过期或不设过期，后台异步刷新，让请求始终读到旧值不落库。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "互斥锁实现上要注意锁超时和拿到锁后二次检查缓存，否则会重复回源。",
+      "热点 key 提前预热并设置随机过期时间，可以避免同一时刻集体失效。"
+    ]
+  },
+  {
+    "key": "method_slow_api",
+    "want": "knowledge",
+    "domain": "排障",
+    "state": "none",
+    "question": "一个接口突然变慢，你一般按什么步骤定位问题",
+    "sample": 1,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "如果只有 P99 慢、平均正常，优先怀疑锁竞争、GC 停顿或个别慢依赖，而不是整体容量问题。",
+      "进到服务内部时看 APM 的火焰图或埋点分段耗时，比直接 jstack 更快定位到是哪一段代码。"
+    ],
+    "chars": 151,
+    "total_ms": 3097,
+    "answer": "一般按从外到内、先排除再深入的四步走：先看监控确认是全部请求慢还是个别慢、从哪个时间点开始，再查最近有没有发布、配置或数据量变化，然后分链路看是网络、网关、下游依赖还是本服务耗时，最后才进到 JVM 和数据库层面看慢 SQL、GC、线程池。关键是前两步先锁定范围，避免一上来就 dump 线程或翻代码。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "如果只有 P99 慢、平均正常，优先怀疑锁竞争、GC 停顿或个别慢依赖，而不是整体容量问题。",
+      "进到服务内部时看 APM 的火焰图或埋点分段耗时，比直接 jstack 更快定位到是哪一段代码。"
+    ]
+  },
+  {
+    "key": "behavioral_incident",
+    "want": "behavioral",
+    "domain": "行为题",
+    "state": "none",
+    "question": "说说你处理过最严重的一次线上事故，以及你是怎么复盘的",
+    "sample": 1,
+    "kind": "behavioral",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "复盘要说清三件事：直接原因、为什么没被更早发现、你后来改了什么。",
+      "没赶上过大事故就讲你拦下的严重问题，也别编一个P1。"
+    ],
+    "chars": 66,
+    "total_ms": 2292,
+    "answer": "这题只能用你自己的真实经历，我替不了你。挑一次你真的参与过的事故，重点讲你当时做的判断、你负责的那部分，最后给一个能兜住追问的数字。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "复盘要说清三件事：直接原因、为什么没被更早发现、你后来改了什么。",
+      "没赶上过大事故就讲你拦下的严重问题，也别编一个P1。"
+    ]
+  },
+  {
+    "key": "behavioral_design",
+    "want": "behavioral",
+    "domain": "行为题",
+    "state": "none",
+    "question": "讲一个你主导过的系统设计项目，你遇到的最大分歧是什么",
+    "sample": 1,
+    "kind": "behavioral",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "分歧别讲成\"大家讨论后达成一致\"，要说出你最终否掉了谁、为什么。",
+      "一定要收在一个可验证的结果上，性能数字、故障率、交付时间都行。"
+    ],
+    "chars": 69,
+    "total_ms": 1734,
+    "answer": "这题只能用你自己的真实项目，我替不了你。挑一个你真的拍板过的设计，分歧要讲具体：两个人各自坚持什么、你用什么依据做的决定、上线后结果如何。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "分歧别讲成\"大家讨论后达成一致\"，要说出你最终否掉了谁、为什么。",
+      "一定要收在一个可验证的结果上，性能数字、故障率、交付时间都行。"
+    ]
+  },
+  {
+    "key": "design_lottery",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么去设计数据结构，表格，和接口啥的",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "奖品表按 prize_id 记总数、剩余库存和开始结束时间，用户参与表以 (user_id, prize_id) 做唯一键记录是否中奖和领取状态。",
+      "接口只保留 POST /prize/draw，入参 prize_id，先用唯一键判断该用户是否已参与，重复请求直接返回上次结果，保证幂等。",
+      "中奖判定先按 30% 概率抽随机数，未中直接返回，中了再用 UPDATE ... SET remain = remain - 1 WHERE remain > 0 的条件更新扣库存，受影响行数为 0 说明已抢光。",
+      "1000 人抢 100 个库存，高并发下把扣减和发奖放在同一个事务里，或用 Redis 预扣库存加最终对账来挡住热点。",
+      "剩余库存为 0 后接口快速失败返回活动已结束，避免请求都打到数据库，同时用过期时间清理未支付的中奖记录并回滚库存。"
+    ],
+    "chars": 44,
+    "total_ms": 2727,
+    "answer": "这是抽奖的库存扣减加幂等发放问题，核心是用条件更新保证不超卖、用唯一键保证每人只中一次。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "奖品表按 prize_id 记总数、剩余库存和开始结束时间，用户参与表以 (user_id, prize_id) 做唯一键记录是否中奖和领取状态。",
+      "接口只保留 POST /prize/draw，入参 prize_id，先用唯一键判断该用户是否已参与，重复请求直接返回上次结果，保证幂等。",
+      "中奖判定先按 30% 概率抽随机数，未中直接返回，中了再用 UPDATE ... SET remain = remain - 1 WHERE remain > 0 的条件更新扣库存，受影响行数为 0 说明已抢光。",
+      "1000 人抢 100 个库存，高并发下把扣减和发奖放在同一个事务里，或用 Redis 预扣库存加最终对账来挡住热点。",
+      "剩余库存为 0 后接口快速失败返回活动已结束，避免请求都打到数据库，同时用过期时间清理未支付的中奖记录并回滚库存。"
+    ]
+  },
+  {
+    "key": "design_lottery",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么去设计数据结构，表格，和接口啥的",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "创建活动时把 100 个奖品预先拆成 100 个唯一券码写入库存表，用 row_key 直接标定名额，不在内存里维护一个整数计数器。",
+      "抽奖用 Redis 做原子操作：INCR 全局抽奖计数器，超过 1000 则拒绝，再按 30% 概率决定是否授予，Lua 脚本保证计数和校验同一步完成。",
+      "中奖后用 Redis 预减库存，扣到 0 即停，再发 MQ 异步落库；MySQL 的 inventory 表带 version 做 CAS，保证前后端一致和最终不超卖。",
+      "接口分两个：POST /lottery/draw 带 userId 和幂等号，返回中奖结果或未中奖；GET /lottery/result 查询用户中奖记录，都做成幂等。",
+      "记录表以 idempotent_key 为唯一索引，中奖、未中奖都写流水，保证同一请求重试不重复扣减；超过 1000 或库存为 0 时直接返回错误码，不落库。"
+    ],
+    "chars": 51,
+    "total_ms": 2926,
+    "answer": "这本质是高并发抽奖，核心是把 1000 次并发请求收窄成不超过 100 次中奖，并把中奖结果可靠落库。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "创建活动时把 100 个奖品预先拆成 100 个唯一券码写入库存表，用 row_key 直接标定名额，不在内存里维护一个整数计数器。",
+      "抽奖用 Redis 做原子操作：INCR 全局抽奖计数器，超过 1000 则拒绝，再按 30% 概率决定是否授予，Lua 脚本保证计数和校验同一步完成。",
+      "中奖后用 Redis 预减库存，扣到 0 即停，再发 MQ 异步落库；MySQL 的 inventory 表带 version 做 CAS，保证前后端一致和最终不超卖。",
+      "接口分两个：POST /lottery/draw 带 userId 和幂等号，返回中奖结果或未中奖；GET /lottery/result 查询用户中奖记录，都做成幂等。",
+      "记录表以 idempotent_key 为唯一索引，中奖、未中奖都写流水，保证同一请求重试不重复扣减；超过 1000 或库存为 0 时直接返回错误码，不落库。"
+    ]
+  },
+  {
+    "key": "design_shorturl",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "设计一个短链服务，说说你的数据结构和表怎么设计",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "用发号器加 Base62 编码生成短码：数据库自增或号段模式取一个递增 ID，转成 62 进制，6 位就能覆盖约 568 亿条，天然无冲突。",
+      "表以短码为主键或唯一索引，存长 URL 原文、创建时间、过期时间、状态和创建者，短码上加唯一约束兜底防止重复。",
+      "跳转走缓存：短码到长 URL 的映射放 Redis，缓存命中直接 302，未命中查库再回填，热点链接几乎不落库。",
+      "高并发写用号段模式批量取 ID 到内存，避免每次生成都打数据库；长 URL 用摘要或唯一索引去重，让同一 URL 复用已有短码。",
+      "过期清理和统计异步化：删除或统计走消息队列，跳转链路只读不写，保证响应时间稳定。"
+    ],
+    "chars": 47,
+    "total_ms": 2593,
+    "answer": "这是经典的短链生成加跳转系统，核心是把长 URL 映射成一个尽量短、唯一、可持久化的 key。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "用发号器加 Base62 编码生成短码：数据库自增或号段模式取一个递增 ID，转成 62 进制，6 位就能覆盖约 568 亿条，天然无冲突。",
+      "表以短码为主键或唯一索引，存长 URL 原文、创建时间、过期时间、状态和创建者，短码上加唯一约束兜底防止重复。",
+      "跳转走缓存：短码到长 URL 的映射放 Redis，缓存命中直接 302，未命中查库再回填，热点链接几乎不落库。",
+      "高并发写用号段模式批量取 ID 到内存，避免每次生成都打数据库；长 URL 用摘要或唯一索引去重，让同一 URL 复用已有短码。",
+      "过期清理和统计异步化：删除或统计走消息队列，跳转链路只读不写，保证响应时间稳定。"
+    ]
+  },
+  {
+    "key": "design_shorturl",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "设计一个短链服务，说说你的数据结构和表怎么设计",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "短码用自增 ID 做 Base62 编码，长度固定在六七位；同一长链可先用长链哈希去重，返回已有短码。",
+      "映射关系必须落库：一张 url_mapping 表以短码为主键，存长链、创建时间、过期时间，短码上建唯一索引保证查不到歧义。",
+      "跳转是读多写少的热路径，用 Redis 缓存短码到长链的映射，缓存不命中再回源数据库并写回。",
+      "生成短码时用号段或发号器批量取 ID，避免每次插入都依赖数据库自增，同时不暴露自增规律。",
+      "点击统计走异步：跳转时只写日志或消息队列，后台聚合到统计表，不阻塞 302 响应。"
+    ],
+    "chars": 34,
+    "total_ms": 2668,
+    "answer": "这是经典的短链发号加映射问题，核心是让短码可生成、可查、可统计跳转。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "短码用自增 ID 做 Base62 编码，长度固定在六七位；同一长链可先用长链哈希去重，返回已有短码。",
+      "映射关系必须落库：一张 url_mapping 表以短码为主键，存长链、创建时间、过期时间，短码上建唯一索引保证查不到歧义。",
+      "跳转是读多写少的热路径，用 Redis 缓存短码到长链的映射，缓存不命中再回源数据库并写回。",
+      "生成短码时用号段或发号器批量取 ID，避免每次插入都依赖数据库自增，同时不暴露自增规律。",
+      "点击统计走异步：跳转时只写日志或消息队列，后台聚合到统计表，不阻塞 302 响应。"
+    ]
+  },
+  {
+    "key": "design_feed",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "如果让你设计一个朋友圈的信息流，存储和接口你会怎么设计",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "发布写一条 feed 主表存动态 id、作者、内容、时间，作为内容的唯一来源。",
+      "每个活跃用户维护一个收件箱表，按 user_id 加时间倒序存 feed_id 和时间戳，读流就是按 user_id 分页扫这张表。",
+      "发布时异步推送：普通用户直接扇出写粉丝收件箱，大 V 走拉模式，读的时候再合并，避免一条动态写几百万行。",
+      "分页用游标（最后一条时间戳加 feed_id）而不是 offset，避免翻页时新内容插入导致重复或漏掉。",
+      "收件箱按 user_id 分片、只保留近几百条，冷数据回源到 feed 主表，删除和权限校验时以主表为准。"
+    ],
+    "chars": 42,
+    "total_ms": 2569,
+    "answer": "这是写扩散的 feed 问题，核心是发布时把动态推到关注者的收件箱，读的时候直接取。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "发布写一条 feed 主表存动态 id、作者、内容、时间，作为内容的唯一来源。",
+      "每个活跃用户维护一个收件箱表，按 user_id 加时间倒序存 feed_id 和时间戳，读流就是按 user_id 分页扫这张表。",
+      "发布时异步推送：普通用户直接扇出写粉丝收件箱，大 V 走拉模式，读的时候再合并，避免一条动态写几百万行。",
+      "分页用游标（最后一条时间戳加 feed_id）而不是 offset，避免翻页时新内容插入导致重复或漏掉。",
+      "收件箱按 user_id 分片、只保留近几百条，冷数据回源到 feed 主表，删除和权限校验时以主表为准。"
+    ]
+  },
+  {
+    "key": "design_feed",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "如果让你设计一个朋友圈的信息流，存储和接口你会怎么设计",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "发朋友圈时把内容（文字、图片URL、位置）存一份内容表 feed_content，按 feed_id 唯一标识，图片只存对象存储地址不存二进制。",
+      "收件箱用 feed_inbox 表按 user_id 存 feed_id 和发布时间，普通用户写扩散、大 V 走读扩散拉取合并，避免粉丝量大的用户写放大。",
+      "拉取接口按 user_id 和时间游标（last_time 或 feed_id）分页查询收件箱，返回内容时批量回表或走内容缓存，不返回全量。",
+      "用 Redis 缓存活跃用户最近 N 条收件箱，冷数据落 MySQL 或 HBase，删除和可见性通过软删除加可见范围字段控制。",
+      "时间线用时间戳加 feed_id 保证同一秒内稳定排序，游标分页避免翻页时的重复和遗漏。"
+    ],
+    "chars": 47,
+    "total_ms": 3060,
+    "answer": "这是典型的 Feed 流设计，核心是把“写扩散”和“读扩散”按用户类型分开，存储上做冷热分层。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "发朋友圈时把内容（文字、图片URL、位置）存一份内容表 feed_content，按 feed_id 唯一标识，图片只存对象存储地址不存二进制。",
+      "收件箱用 feed_inbox 表按 user_id 存 feed_id 和发布时间，普通用户写扩散、大 V 走读扩散拉取合并，避免粉丝量大的用户写放大。",
+      "拉取接口按 user_id 和时间游标（last_time 或 feed_id）分页查询收件箱，返回内容时批量回表或走内容缓存，不返回全量。",
+      "用 Redis 缓存活跃用户最近 N 条收件箱，冷数据落 MySQL 或 HBase，删除和可见性通过软删除加可见范围字段控制。",
+      "时间线用时间戳加 feed_id 保证同一秒内稳定排序，游标分页避免翻页时的重复和遗漏。"
+    ]
+  },
+  {
+    "key": "design_gacha_pity",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "如果是9宫格，中间一个按钮，周围8个奖品，稀有概率不一样，然后每个用户每抽一次幸运值都会提高，请问你怎么去设置",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "每个奖品配置基础权重，按稀有度递减，中奖概率等于该项权重除以总权重，中间按钮本身不参与抽奖。",
+      "幸运值按次数累加，用倍率函数按稀有度反向放大权重，越稀有放大系数越大，普通奖品基本不动。",
+      "幸运值必须是持久化状态，按 user_id 存在数据库并加过期时间，抽中稀有奖品后重置为 0，否则保底会无限叠加。",
+      "设一个硬保底次数，达到阈值时直接把概率收敛到稀有奖品，保证最坏情况下也有上限。",
+      "并发下用行锁或条件更新扣减幸运值并记录抽奖流水，防止同一次幸运值被重复消费。"
+    ],
+    "chars": 37,
+    "total_ms": 2703,
+    "answer": "这是带保底权重的抽奖概率模型，核心是用幸运值动态放大权重而不是直接改概率。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "每个奖品配置基础权重，按稀有度递减，中奖概率等于该项权重除以总权重，中间按钮本身不参与抽奖。",
+      "幸运值按次数累加，用倍率函数按稀有度反向放大权重，越稀有放大系数越大，普通奖品基本不动。",
+      "幸运值必须是持久化状态，按 user_id 存在数据库并加过期时间，抽中稀有奖品后重置为 0，否则保底会无限叠加。",
+      "设一个硬保底次数，达到阈值时直接把概率收敛到稀有奖品，保证最坏情况下也有上限。",
+      "并发下用行锁或条件更新扣减幸运值并记录抽奖流水，防止同一次幸运值被重复消费。"
+    ]
+  },
+  {
+    "key": "design_gacha_pity",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "如果是9宫格，中间一个按钮，周围8个奖品，稀有概率不一样，然后每个用户每抽一次幸运值都会提高，请问你怎么去设置",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "八格各配一个基础权重，稀有度越低权重越小，普通奖权重最大，权重决定这一抽落在哪个格子。",
+      "每个用户一条幸运值记录，按 userId 存库，抽一次涨一点，抽中稀有奖后清零或大幅回落，避免连续出货。",
+      "实际概率按基础权重乘以幸运加成再归一化，幸运值越高稀有格被抬得越明显，等于变相保底。",
+      "抽奖走服务端单事务：扣次数、更新幸运值、落中奖流水，用 userId 加锁或乐观版本号防止并发刷。",
+      "幸运值要为每个用户设上限，并在抽奖流水里记录每次的幸运值和命中权重，方便对账和调概率。"
+    ],
+    "chars": 61,
+    "total_ms": 2584,
+    "answer": "这是一个带保底权重的随机抽奖，核心是把概率配置和用户幸运值拆开：静态权重决定基础分布，幸运值作为动态加成在每次抽奖时叠加。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "八格各配一个基础权重，稀有度越低权重越小，普通奖权重最大，权重决定这一抽落在哪个格子。",
+      "每个用户一条幸运值记录，按 userId 存库，抽一次涨一点，抽中稀有奖后清零或大幅回落，避免连续出货。",
+      "实际概率按基础权重乘以幸运加成再归一化，幸运值越高稀有格被抬得越明显，等于变相保底。",
+      "抽奖走服务端单事务：扣次数、更新幸运值、落中奖流水，用 userId 加锁或乐观版本号防止并发刷。",
+      "幸运值要为每个用户设上限，并在抽奖流水里记录每次的幸运值和命中权重，方便对账和调概率。"
+    ]
+  },
+  {
+    "key": "design_order_timeout",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "订单创建后30分钟没支付就自动取消，这个功能你怎么设计",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "核心模型是订单状态机：待支付、已支付、已取消，只有待支付能转已取消，用状态条件更新保证幂等。",
+      "用延时消息或定时任务在30分钟时触发取消，消息里只放orderId，消费时回查订单当前状态。",
+      "并发上用UPDATE orders SET status=已取消 WHERE order_id=? AND status=待支付，返回0行说明订单已支付或已取消，直接丢弃。",
+      "兜底是扫单任务，按create_time加索引扫描超时未支付的订单，防止延时消息丢失导致订单永远挂着。",
+      "取消成功后要释放库存和优惠券，这一步也得幂等，或者放在同一个事务里保证一致。"
+    ],
+    "chars": 42,
+    "total_ms": 2290,
+    "answer": "这是典型的延时任务，关键是让取消这件事可重放、可兜底，而不是只靠一个内存里的定时器。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "核心模型是订单状态机：待支付、已支付、已取消，只有待支付能转已取消，用状态条件更新保证幂等。",
+      "用延时消息或定时任务在30分钟时触发取消，消息里只放orderId，消费时回查订单当前状态。",
+      "并发上用UPDATE orders SET status=已取消 WHERE order_id=? AND status=待支付，返回0行说明订单已支付或已取消，直接丢弃。",
+      "兜底是扫单任务，按create_time加索引扫描超时未支付的订单，防止延时消息丢失导致订单永远挂着。",
+      "取消成功后要释放库存和优惠券，这一步也得幂等，或者放在同一个事务里保证一致。"
+    ]
+  },
+  {
+    "key": "design_order_timeout",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "订单创建后30分钟没支付就自动取消，这个功能你怎么设计",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "订单落库时带创建时间和过期时间，状态设为待支付，这是唯一的真相来源。",
+      "下单成功后投递一条延迟消息，到期未支付则由消费者触发关单并释放库存。",
+      "用 Redis 的过期时间或时间轮做本地兜底，避免消息中间件丢消息导致订单永远挂着。",
+      "关单和支付可能并发，用数据库状态条件更新做幂等，只有待支付才能改成已取消。",
+      "再加一个定时扫表任务兜底补偿，扫的是超时但仍为待支付的订单，处理量可控。"
+    ],
+    "chars": 46,
+    "total_ms": 2439,
+    "answer": "这是延迟任务加最终一致性的问题，核心是不依赖同步轮询，把取消时机交给一个带持久化的定时机制。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "订单落库时带创建时间和过期时间，状态设为待支付，这是唯一的真相来源。",
+      "下单成功后投递一条延迟消息，到期未支付则由消费者触发关单并释放库存。",
+      "用 Redis 的过期时间或时间轮做本地兜底，避免消息中间件丢消息导致订单永远挂着。",
+      "关单和支付可能并发，用数据库状态条件更新做幂等，只有待支付才能改成已取消。",
+      "再加一个定时扫表任务兜底补偿，扫的是超时但仍为待支付的订单，处理量可控。"
+    ]
+  },
+  {
+    "key": "design_seat_hold",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "设计电影院选座，用户锁座5分钟，超时自动释放，还要避免同一个座位卖给两个人",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "座位以场次加座位号唯一标识，锁记录存 Redis 并设 5 分钟 TTL，key 天然保证同一座位同时只有一个人能写成功。",
+      "选座时用 SET NX 或 Lua 脚本原子抢锁，拿到锁才算选中，没拿到直接返回已被占，绝不能先查再写。",
+      "下单成功才把锁转成正式订单并落库，锁过期则由 TTL 自动释放，不依赖定时任务才能正确回收。",
+      "释放不能只删 key：Lua 脚本比对持有者 token 再删，避免删掉别人刚抢到的新锁。",
+      "最终一致性靠落库时的唯一索引兜底，即使锁层失效或 Redis 丢数据，重复写入也会被数据库拒绝。"
+    ],
+    "chars": 63,
+    "total_ms": 2852,
+    "answer": "这是一个带过期时间的资源预留问题，本质和秒杀下单锁库存、酒店房间预留是同一类，核心是把锁做成有 TTL 的状态而不是常驻记录。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "座位以场次加座位号唯一标识，锁记录存 Redis 并设 5 分钟 TTL，key 天然保证同一座位同时只有一个人能写成功。",
+      "选座时用 SET NX 或 Lua 脚本原子抢锁，拿到锁才算选中，没拿到直接返回已被占，绝不能先查再写。",
+      "下单成功才把锁转成正式订单并落库，锁过期则由 TTL 自动释放，不依赖定时任务才能正确回收。",
+      "释放不能只删 key：Lua 脚本比对持有者 token 再删，避免删掉别人刚抢到的新锁。",
+      "最终一致性靠落库时的唯一索引兜底，即使锁层失效或 Redis 丢数据，重复写入也会被数据库拒绝。"
+    ]
+  },
+  {
+    "key": "design_seat_hold",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "设计电影院选座，用户锁座5分钟，超时自动释放，还要避免同一个座位卖给两个人",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 4,
+    "bullets": [
+      "座位表以场次加座位号为唯一键，状态字段记录可用、锁定、已售，锁定时写入锁定用户和过期时间戳。",
+      "锁座走条件更新：只有当前状态为可用或锁已过期才改成锁定，用受影响行数判断胜负，配合数据库唯一约束兜底，避免两个人同时拿到同一座。",
+      "释放不靠定时任务扫描，下单和查询时惰性判断过期，再加一个低频的兜底清理任务修正脏状态。",
+      "下单成功后把座位状态从锁定改成已售，用状态条件更新防止同一锁被重复消费和重复出票。"
+    ],
+    "chars": 57,
+    "total_ms": 2244,
+    "answer": "这是典型的座位库存 + 短时锁的高并发系统，核心是把座位状态收敛到数据库的原子更新上，再用带过期的锁做业务层语义。",
+    "raw_bullet_count": 4,
+    "app_bullets": [
+      "座位表以场次加座位号为唯一键，状态字段记录可用、锁定、已售，锁定时写入锁定用户和过期时间戳。",
+      "锁座走条件更新：只有当前状态为可用或锁已过期才改成锁定，用受影响行数判断胜负，配合数据库唯一约束兜底，避免两个人同时拿到同一座。",
+      "释放不靠定时任务扫描，下单和查询时惰性判断过期，再加一个低频的兜底清理任务修正脏状态。",
+      "下单成功后把座位状态从锁定改成已售，用状态条件更新防止同一锁被重复消费和重复出票。"
+    ]
+  },
+  {
+    "key": "design_coupon_claim",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "一万张优惠券同一时间开抢，每个用户只能领一张，你会怎么设计",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "Redis 里按券 ID 存库存计数，用 Lua 脚本把判断余量和扣减做成一次原子操作。",
+      "用户维度用 set 或按券 ID 加用户 ID 的唯一键做去重，保证一人只领一张。",
+      "扣减成功后写异步消息进 MQ，由消费者落库生成领取记录，避免同步打垮数据库。",
+      "领取记录表在券 ID 加用户 ID 上建唯一索引，作为最终幂等兜底，重复写入直接被拒。",
+      "库存扣了但落库失败时用对账和回补做补偿，避免超发。"
+    ],
+    "chars": 49,
+    "total_ms": 2539,
+    "answer": "这是秒杀场景下的库存扣减加用户限领，核心是把一次抢券建模成对库存的原子扣减和有唯一约束的领取记录。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "Redis 里按券 ID 存库存计数，用 Lua 脚本把判断余量和扣减做成一次原子操作。",
+      "用户维度用 set 或按券 ID 加用户 ID 的唯一键做去重，保证一人只领一张。",
+      "扣减成功后写异步消息进 MQ，由消费者落库生成领取记录，避免同步打垮数据库。",
+      "领取记录表在券 ID 加用户 ID 上建唯一索引，作为最终幂等兜底，重复写入直接被拒。",
+      "库存扣了但落库失败时用对账和回补做补偿，避免超发。"
+    ]
+  },
+  {
+    "key": "design_coupon_claim",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "一万张优惠券同一时间开抢，每个用户只能领一张，你会怎么设计",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "库存预热到 Redis，用 Lua 脚本把「判断库存、扣减、记录该用户已领」三步做成一次原子操作，避免超卖。",
+      "每个用户只能领一张靠两道防线：Redis 里用 couponId 加 userId 组成的 Set 或 bitmap 做快速判重，数据库再对 user_id 加 coupon_id 建唯一索引兜底。",
+      "用户请求先过限流和资格校验，只有通过的人才真正去扣库存，失败直接返回已抢完或已领取。",
+      "扣减成功的请求不直接写库，而是发到消息队列异步落单，削峰填谷，队列积压说明压力过大要限流。",
+      "数据库按 coupon_id 分库分表或者直接用库存行做 update stock = stock - 1 where stock > 0 的乐观扣减，保证最终一致，同时给券设置有效期定时清理。"
+    ],
+    "chars": 46,
+    "total_ms": 2521,
+    "answer": "这是高并发秒杀里的库存扣减加用户去重，核心是把抢券收口到原子扣减，并且按用户维度做唯一约束。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "库存预热到 Redis，用 Lua 脚本把「判断库存、扣减、记录该用户已领」三步做成一次原子操作，避免超卖。",
+      "每个用户只能领一张靠两道防线：Redis 里用 couponId 加 userId 组成的 Set 或 bitmap 做快速判重，数据库再对 user_id 加 coupon_id 建唯一索引兜底。",
+      "用户请求先过限流和资格校验，只有通过的人才真正去扣库存，失败直接返回已抢完或已领取。",
+      "扣减成功的请求不直接写库，而是发到消息队列异步落单，削峰填谷，队列积压说明压力过大要限流。",
+      "数据库按 coupon_id 分库分表或者直接用库存行做 update stock = stock - 1 where stock > 0 的乐观扣减，保证最终一致，同时给券设置有效期定时清理。"
+    ]
+  },
+  {
+    "key": "design_chunk_upload",
+    "want": "design",
+    "domain": "存储",
+    "state": "required",
+    "question": "设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 6,
+    "bullets": [
+      "会话元数据落库，按 upload_id 记录文件 MD5、分片大小、总分片数、已完成分片、过期时间和状态，大文件内容不落库。",
+      "秒传在创建会话时判定：先查文件 MD5 是否已存在完整对象，命中直接返回可访问地址，客户端跳过全部上传。",
+      "接口分为创建会话、查询已上传分片、幂等上传分片、校验后合并四步；分片先写对象存储，key 用 upload_id 加分片序号，重传覆盖不产生重复。",
+      "断点续传靠查询接口返回已完成分片列表，客户端跳过；分片上传按 upload_id 加序号加分片 MD5 做幂等，同一分片重试只保留一份。",
+      "合并用会话状态的条件更新防并发重复合并，合并后校验整体 MD5 与声明值一致才置为完成，失败分片由客户端重试并设最大重试次数。",
+      "会话设过期时间，由后台任务清理未完成会话和残留分片。"
+    ],
+    "chars": 59,
+    "total_ms": 2732,
+    "answer": "这是分片上传加秒传加可恢复会话，核心是把一次上传建模成按 upload_id 管理的会话，用分片哈希做幂等和秒传判定。",
+    "raw_bullet_count": 6,
+    "app_bullets": [
+      "会话元数据落库，按 upload_id 记录文件 MD5、分片大小、总分片数、已完成分片、过期时间和状态，大文件内容不落库。",
+      "秒传在创建会话时判定：先查文件 MD5 是否已存在完整对象，命中直接返回可访问地址，客户端跳过全部上传。",
+      "接口分为创建会话、查询已上传分片、幂等上传分片、校验后合并四步；分片先写对象存储，key 用 upload_id 加分片序号，重传覆盖不产生重复。",
+      "断点续传靠查询接口返回已完成分片列表，客户端跳过；分片上传按 upload_id 加序号加分片 MD5 做幂等，同一分片重试只保留一份。",
+      "合并用会话状态的条件更新防并发重复合并，合并后校验整体 MD5 与声明值一致才置为完成，失败分片由客户端重试并设最大重试次数。"
+    ]
+  },
+  {
+    "key": "design_chunk_upload",
+    "want": "design",
+    "domain": "存储",
+    "state": "required",
+    "question": "设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "秒传靠文件内容哈希（如 SHA-256）在文件表里查，命中就直接在用户空间建引用，不复制实体，引用计数控制删除。",
+      "分片上传会话按 upload_id 记录文件哈希、分片大小、已完成分片列表和过期时间，这是断点续传的唯一依据。",
+      "分片内容直接落对象存储，数据库只存元数据和状态；分片以 upload_id + 分片序号命名，重传同一分片天然幂等。",
+      "分片传完做合并前校验：逐片校验和加整体哈希比对，防止中间分片损坏，合并成功后更新文件状态并清理临时分片。",
+      "失败重试由客户端做指数退避并只重传失败分片，服务端合并用状态条件更新（如 pending 到 merging）防并发重复合并，超时会话由定时任务清理。"
+    ],
+    "chars": 52,
+    "total_ms": 2606,
+    "answer": "这是分片上传，核心是把一次上传建模成可恢复的会话：先问服务端文件在不在、再续传缺哪些分片、最后校验合并。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "秒传靠文件内容哈希（如 SHA-256）在文件表里查，命中就直接在用户空间建引用，不复制实体，引用计数控制删除。",
+      "分片上传会话按 upload_id 记录文件哈希、分片大小、已完成分片列表和过期时间，这是断点续传的唯一依据。",
+      "分片内容直接落对象存储，数据库只存元数据和状态；分片以 upload_id + 分片序号命名，重传同一分片天然幂等。",
+      "分片传完做合并前校验：逐片校验和加整体哈希比对，防止中间分片损坏，合并成功后更新文件状态并清理临时分片。",
+      "失败重试由客户端做指数退避并只重传失败分片，服务端合并用状态条件更新（如 pending 到 merging）防并发重复合并，超时会话由定时任务清理。"
+    ]
+  },
+  {
+    "key": "design_chat_unread",
+    "want": "design",
+    "domain": "即时通信",
+    "state": "required",
+    "question": "聊天系统的未读数怎么设计，要求手机和电脑多端登录后最终一致",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "核心模型：未读数以用户+会话为维度存一份权威值，每个端本地只缓存一份副本，Redis Hash 或一张 user_conv_unread 表都可以，key 是 user_id+conv_id。",
+      "自增来源：新消息落库后按会话成员fanout，只给在线或离线用户更新权威未读数，用 Redis 的 HINCRBY 保证原子性，再异步刷回 MySQL 持久化。",
+      "多端一致：权威值变更后通过长连接推送给该用户所有在线端，消息里带上服务端时间戳或单调递增版本号，端上按版本号覆盖本地，避免乱序回退。",
+      "端上已读回执：某端打开会话时上报已读数或最后已读消息 ID，服务端用 max 或条件更新收敛为已读，再广播给其他端清零或同步。",
+      "最终一致兜底：端重连或冷启动时拉一次全量未读快照，与增量推送的版本号比对，发现落后就整体覆盖。"
+    ],
+    "chars": 51,
+    "total_ms": 3300,
+    "answer": "这是多端会话状态的一致性问题，本质是把未读数做成每个会话的一个可收敛的计数状态，而不是每个端各自累加。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "核心模型：未读数以用户+会话为维度存一份权威值，每个端本地只缓存一份副本，Redis Hash 或一张 user_conv_unread 表都可以，key 是 user_id+conv_id。",
+      "自增来源：新消息落库后按会话成员fanout，只给在线或离线用户更新权威未读数，用 Redis 的 HINCRBY 保证原子性，再异步刷回 MySQL 持久化。",
+      "多端一致：权威值变更后通过长连接推送给该用户所有在线端，消息里带上服务端时间戳或单调递增版本号，端上按版本号覆盖本地，避免乱序回退。",
+      "端上已读回执：某端打开会话时上报已读数或最后已读消息 ID，服务端用 max 或条件更新收敛为已读，再广播给其他端清零或同步。",
+      "最终一致兜底：端重连或冷启动时拉一次全量未读快照，与增量推送的版本号比对，发现落后就整体覆盖。"
+    ]
+  },
+  {
+    "key": "design_chat_unread",
+    "want": "design",
+    "domain": "即时通信",
+    "state": "required",
+    "question": "聊天系统的未读数怎么设计，要求手机和电脑多端登录后最终一致",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "存储：按用户维度存未读总数和 per-conversation 未读数，user_id + conversation_id 做唯一键，version 随每次变更自增，服务端是唯一权威源。",
+      "更新：每次消息产生带一个自增 seq，未读变更在存储层以 version 做乐观锁，冲突就拒绝并返回最新值，保证多端并发不会丢更新。",
+      "同步：各端本地缓存 version，收到的推送值 version 低于本地就丢弃，高于本地才覆盖，或用长轮询/WebSocket 推全量。",
+      "已读处理：已读请求带 version，服务端比大小，只在 version 更新时才清零；多端同时读同一会话要按 version 取最大值生效。",
+      "一致性：用最终一致——更新走异步消息队列，各端订阅变更，服务端保留 version 使重放和迟到消息可被拒绝，收敛到同一视图。"
+    ],
+    "chars": 61,
+    "total_ms": 2780,
+    "answer": "核心是要做到多端最终一致——用版本号加乐观锁，每次变更带 version，低版本更新被拒绝后客户端重新拉一次当前值再重试。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "存储：按用户维度存未读总数和 per-conversation 未读数，user_id + conversation_id 做唯一键，version 随每次变更自增，服务端是唯一权威源。",
+      "更新：每次消息产生带一个自增 seq，未读变更在存储层以 version 做乐观锁，冲突就拒绝并返回最新值，保证多端并发不会丢更新。",
+      "同步：各端本地缓存 version，收到的推送值 version 低于本地就丢弃，高于本地才覆盖，或用长轮询/WebSocket 推全量。",
+      "已读处理：已读请求带 version，服务端比大小，只在 version 更新时才清零；多端同时读同一会话要按 version 取最大值生效。",
+      "一致性：用最终一致——更新走异步消息队列，各端订阅变更，服务端保留 version 使重放和迟到消息可被拒绝，收敛到同一视图。"
+    ]
+  },
+  {
+    "key": "design_payment_callback",
+    "want": "design",
+    "domain": "支付",
+    "state": "required",
+    "question": "第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "回调入口只做验签和落库，把通知原样写进支付流水表，以渠道单号加业务订单号做唯一索引，重复通知直接冲突丢弃，先返回成功再异步处理，避免渠道重试打爆。",
+      "订单更新用状态机加乐观锁，只允许待支付到已支付单向流转，更新条件带上当前状态，重复或乱序的旧通知因为状态不匹配自然失效；金额和商户号必须比对一致才入账。",
+      "主动补偿用定时任务扫待支付且超过一定时长的订单，反查渠道订单状态，查到成功就补一次幂等的入账，这是防止回调彻底丢失的主路径。",
+      "按天做渠道对账文件比对，本地流水和渠道账单双向平账，长款短款生成差错单走人工或自动冲正，覆盖乱序和丢单留下的残余差异。",
+      "入账和后续发货、加积分用本地消息表或事务消息解耦，先落库再发事件，消费端幂等，避免回调线程里做重业务导致部分成功。"
+    ],
+    "chars": 61,
+    "total_ms": 3311,
+    "answer": "这是支付结果通知的幂等消费加对账兜底问题，核心是把回调当不可信事件处理，订单最终状态由主动查询对账决定，而不是由回调决定。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "回调入口只做验签和落库，把通知原样写进支付流水表，以渠道单号加业务订单号做唯一索引，重复通知直接冲突丢弃，先返回成功再异步处理，避免渠道重试打爆。",
+      "订单更新用状态机加乐观锁，只允许待支付到已支付单向流转，更新条件带上当前状态，重复或乱序的旧通知因为状态不匹配自然失效；金额和商户号必须比对一致才入账。",
+      "主动补偿用定时任务扫待支付且超过一定时长的订单，反查渠道订单状态，查到成功就补一次幂等的入账，这是防止回调彻底丢失的主路径。",
+      "按天做渠道对账文件比对，本地流水和渠道账单双向平账，长款短款生成差错单走人工或自动冲正，覆盖乱序和丢单留下的残余差异。",
+      "入账和后续发货、加积分用本地消息表或事务消息解耦，先落库再发事件，消费端幂等，避免回调线程里做重业务导致部分成功。"
+    ]
+  },
+  {
+    "key": "design_payment_callback",
+    "want": "design",
+    "domain": "支付",
+    "state": "required",
+    "question": "第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "按 out_trade_no 和支付流水号建唯一约束做幂等，重复回调直接返回成功，不重复改单。",
+      "订单状态用状态机单向流转：待支付到支付中到已支付到已关闭，只允许合法跃迁，回调带的状态低于当前状态就丢弃。",
+      "回调里只落支付流水记录和改状态，发货、加积分、发券这些副作用改成监听状态变化的事件异步执行，保证可重放。",
+      "乱序用版本号或时间戳加条件更新解决，晚到的旧回调不改状态。",
+      "缺失用定时对账兜底，按时间窗主动调支付方查单接口，查到已支付但本地未更新就补状态，异常单进人工队列。"
+    ],
+    "chars": 56,
+    "total_ms": 2594,
+    "answer": "这是支付回调的幂等处理加对账补偿问题，核心是把回调当成不保证送达的通知，状态收敛靠自己的持久化状态机加定时对账。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "按 out_trade_no 和支付流水号建唯一约束做幂等，重复回调直接返回成功，不重复改单。",
+      "订单状态用状态机单向流转：待支付到支付中到已支付到已关闭，只允许合法跃迁，回调带的状态低于当前状态就丢弃。",
+      "回调里只落支付流水记录和改状态，发货、加积分、发券这些副作用改成监听状态变化的事件异步执行，保证可重放。",
+      "乱序用版本号或时间戳加条件更新解决，晚到的旧回调不改状态。",
+      "缺失用定时对账兜底，按时间窗主动调支付方查单接口，查到已支付但本地未更新就补状态，异常单进人工队列。"
+    ]
+  },
+  {
+    "key": "design_leaderboard",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "设计一个每天重置的游戏排行榜，需要查前100名和任意用户当前排名",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "实时排名用 Redis ZSet，key 按日期分片如 rank:20240501，score 存分数、member 存 userId，ZREVRANGE 取前 100，ZREVRANK 取任意用户排名，都是 O(log N)。",
+      "同分按时间先后排序：把 score 存成 分数 * 10^10 - 时间戳 的复合值，越早达到该分数的人排在前面。",
+      "每天零点重置时把当前 ZSet 快照写入 MySQL 日榜表并设置 expire，新一天的 key 在首次写入时惰性创建，避免零点集中操作。",
+      "查询用户排名时如果当天 key 不存在，说明当天还没参与，需要从数据库兜底查历史，或用空 ZSet 返回未上榜。",
+      "高并发写入下用 pipeline 或 Lua 脚本保证 先更新分数再读排名的原子性，避免读写分离导致排名不准。"
+    ],
+    "chars": 45,
+    "total_ms": 2895,
+    "answer": "这是典型的日榜排行榜，核心是用 Redis 有序集合做实时排名、用定时快照落库做每日归档。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "实时排名用 Redis ZSet，key 按日期分片如 rank:20240501，score 存分数、member 存 userId，ZREVRANGE 取前 100，ZREVRANK 取任意用户排名，都是 O(log N)。",
+      "同分按时间先后排序：把 score 存成 分数 * 10^10 - 时间戳 的复合值，越早达到该分数的人排在前面。",
+      "每天零点重置时把当前 ZSet 快照写入 MySQL 日榜表并设置 expire，新一天的 key 在首次写入时惰性创建，避免零点集中操作。",
+      "查询用户排名时如果当天 key 不存在，说明当天还没参与，需要从数据库兜底查历史，或用空 ZSet 返回未上榜。",
+      "高并发写入下用 pipeline 或 Lua 脚本保证 先更新分数再读排名的原子性，避免读写分离导致排名不准。"
+    ]
+  },
+  {
+    "key": "design_leaderboard",
+    "want": "design",
+    "domain": "后端",
+    "state": "required",
+    "question": "设计一个每天重置的游戏排行榜，需要查前100名和任意用户当前排名",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "按天分 key，比如 rank:20250612，用 ZINCRBY 加分、ZREVRANGE 0 99 取前 100，过期时间设 48 小时自动清理历史榜。",
+      "任意用户排名用 ZREVRANK 拿 0 基下标加一，复杂度 O(log N)，分数相同时按用户 ID 做次级排序保证名次稳定。",
+      "实时榜直接读 Redis；如果要扛住高峰期读压力，用 ZREVRANGE 的缓存或者分层结果,只缓存前 100 名。",
+      "零点重置靠 key 天然切换，新一天第一次写入自然生成新 key，不需要定时任务批量删除,避免零点抖动。",
+      "要保留历史榜单或做发奖，异步把当日结果落库到 MySQL，主键用日期加用户 ID，Redis 只做在线服务。"
+    ],
+    "chars": 74,
+    "total_ms": 3039,
+    "answer": "这是典型的日榜问题，本质是按周期分桶的有序集合，核心是用 Redis 的 ZSet 按天做 key，排名查询走 ZREVRANK，过期交给 TTL。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "按天分 key，比如 rank:20250612，用 ZINCRBY 加分、ZREVRANGE 0 99 取前 100，过期时间设 48 小时自动清理历史榜。",
+      "任意用户排名用 ZREVRANK 拿 0 基下标加一，复杂度 O(log N)，分数相同时按用户 ID 做次级排序保证名次稳定。",
+      "实时榜直接读 Redis；如果要扛住高峰期读压力，用 ZREVRANGE 的缓存或者分层结果,只缓存前 100 名。",
+      "零点重置靠 key 天然切换，新一天第一次写入自然生成新 key，不需要定时任务批量删除,避免零点抖动。",
+      "要保留历史榜单或做发奖，异步把当日结果落库到 MySQL，主键用日期加用户 ID，Redis 只做在线服务。"
+    ]
+  },
+  {
+    "key": "design_rate_limit",
+    "want": "design",
+    "domain": "网关",
+    "state": "required",
+    "question": "多实例服务要限制每个用户每分钟最多请求100次，这个限流功能怎么设计",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "以用户 ID 加当前分钟为 key 做固定窗口计数，INCR 后第一次调用设置 60 秒过期，计数超过 100 就拒绝请求。",
+      "计数必须原子执行，用 Lua 脚本把 INCR 和 EXPIRE 合成一次调用，避免实例崩溃或并发导致 key 不过期。",
+      "固定窗口会有跨分钟突刺，两个窗口边界可能通过接近 200 次请求，要平滑就换令牌桶或滑动窗口。",
+      "Redis 不可用时要提前定策略：本机内存限流降级放行或直接拒绝，不能让所有请求打到后端。",
+      "超出限制返回 429 并带上 Retry-After，转发的 X-Forwarded-For 只信任可信网关注入的值。"
+    ],
+    "chars": 41,
+    "total_ms": 2315,
+    "answer": "这是分布式限流，标准做法是用 Redis 存共享计数器，多实例拿到同一个全局状态。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "以用户 ID 加当前分钟为 key 做固定窗口计数，INCR 后第一次调用设置 60 秒过期，计数超过 100 就拒绝请求。",
+      "计数必须原子执行，用 Lua 脚本把 INCR 和 EXPIRE 合成一次调用，避免实例崩溃或并发导致 key 不过期。",
+      "固定窗口会有跨分钟突刺，两个窗口边界可能通过接近 200 次请求，要平滑就换令牌桶或滑动窗口。",
+      "Redis 不可用时要提前定策略：本机内存限流降级放行或直接拒绝，不能让所有请求打到后端。",
+      "超出限制返回 429 并带上 Retry-After，转发的 X-Forwarded-For 只信任可信网关注入的值。"
+    ]
+  },
+  {
+    "key": "design_rate_limit",
+    "want": "design",
+    "domain": "网关",
+    "state": "required",
+    "question": "多实例服务要限制每个用户每分钟最多请求100次，这个限流功能怎么设计",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "计数状态放 Redis 中，key 用 user_id 加分钟窗口标识，多实例共读同一份数据，本地计数会因实例数变化而失真。",
+      "窗口选择上，固定窗口用 INCR 加过期实现简单但有临界突刺，滑动窗口或令牌桶更平滑，代价是多存一点时间戳或令牌状态。",
+      "原子性靠 Lua 脚本把\"读计数、比较阈值、写回\"合成一次操作，避免并发下的超卖。",
+      "限流判定结果要明确返回 429 和 Retry-After，同时让调用方知道是拒绝还是排队。",
+      "Redis 不可用时决定降级策略：本地兜底限流放宽阈值，还是直接放行保证可用性，这取决于业务对超限的容忍度。"
+    ],
+    "chars": 52,
+    "total_ms": 2720,
+    "answer": "这是分布式限流，核心是把\"每个用户每分钟100次\"做成一个多实例共享的计数器，而不是每个实例各自记一份。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "计数状态放 Redis 中，key 用 user_id 加分钟窗口标识，多实例共读同一份数据，本地计数会因实例数变化而失真。",
+      "窗口选择上，固定窗口用 INCR 加过期实现简单但有临界突刺，滑动窗口或令牌桶更平滑，代价是多存一点时间戳或令牌状态。",
+      "原子性靠 Lua 脚本把\"读计数、比较阈值、写回\"合成一次操作，避免并发下的超卖。",
+      "限流判定结果要明确返回 429 和 Retry-After，同时让调用方知道是拒绝还是排队。",
+      "Redis 不可用时决定降级策略：本地兜底限流放宽阈值，还是直接放行保证可用性，这取决于业务对超限的容忍度。"
+    ]
+  },
+  {
+    "key": "design_feature_flag",
+    "want": "design",
+    "domain": "发布系统",
+    "state": "required",
+    "question": "设计一个灰度开关系统，能按用户百分比放量、指定白名单，并支持一键回滚",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 6,
+    "bullets": [
+      "开关表按 flag_key 存状态、白名单、放量百分比和版本号，规则变更时版本号自增。",
+      "调用方本地缓存规则并提供 SDK 接口 isEnabled(flagKey, userId)，不能每次请求都同步查库。",
+      "分桶用 hash(flagKey + userId) 对 100 取模，结果落在百分比阈值内即命中，保证同一用户结果稳定可复现。",
+      "判定顺序是先查白名单再加分桶，白名单命中直接返回 true，全量开关命中直接返回 true。",
+      "规则通过长轮询或推送实时下发给调用方，回滚就是恢复上一版本并广播，SDK 收到新版本立刻替换本地缓存。",
+      "规则拉取失败要用本地最后一份缓存兜底，避免配置中心抖动导致全部开关状态错乱。"
+    ],
+    "chars": 58,
+    "total_ms": 3138,
+    "answer": "这是特性开关加流量分桶系统，核心是把开关规则实时下发到调用方，由调用方本地做确定性分桶，让同一个用户始终落进同一桶。",
+    "raw_bullet_count": 6,
+    "app_bullets": [
+      "开关表按 flag_key 存状态、白名单、放量百分比和版本号，规则变更时版本号自增。",
+      "调用方本地缓存规则并提供 SDK 接口 isEnabled(flagKey, userId)，不能每次请求都同步查库。",
+      "分桶用 hash(flagKey + userId) 对 100 取模，结果落在百分比阈值内即命中，保证同一用户结果稳定可复现。",
+      "判定顺序是先查白名单再加分桶，白名单命中直接返回 true，全量开关命中直接返回 true。",
+      "规则通过长轮询或推送实时下发给调用方，回滚就是恢复上一版本并广播，SDK 收到新版本立刻替换本地缓存。"
+    ]
+  },
+  {
+    "key": "design_feature_flag",
+    "want": "design",
+    "domain": "发布系统",
+    "state": "required",
+    "question": "设计一个灰度开关系统，能按用户百分比放量、指定白名单，并支持一键回滚",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "开关配置按 flag_key 存一份规则：全局状态、放量百分比、白名单、黑名单、以及最后修改人和版本号；配置存数据库或配置中心，SDK 本地缓存并靠推送或轮询在秒级拿到变更。",
+      "灰度分桶用稳定哈希：对 user_id 加盐做哈希取模 100，落进小于阈值的桶就开；同一个用户每次结果一致，百分比就是放量比例，改阈值即可逐步放量。",
+      "求值优先级固定：开关先看总开关，再判白名单命中直接放行，然后判黑名单直接关闭，最后才走百分比分桶，顺序写死保证结果可解释。",
+      "毫秒级回滚靠改配置而不是发版：关掉总开关或把百分比置 0，配置中心推送后各节点在秒级生效，同时保留版本号和历史记录以便审计和快速回退。",
+      "降级和兜底：配置拉取失败时用本地缓存的最后一份配置，求值异常默认按关闭处理，避免开关故障放大成业务故障。"
+    ],
+    "chars": 66,
+    "total_ms": 3219,
+    "answer": "这是功能开关（feature flag）系统，核心是把每条开关做成带规则的配置，每次请求按规则实时求值，配置本身可快速改并立刻生效。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "开关配置按 flag_key 存一份规则：全局状态、放量百分比、白名单、黑名单、以及最后修改人和版本号；配置存数据库或配置中心，SDK 本地缓存并靠推送或轮询在秒级拿到变更。",
+      "灰度分桶用稳定哈希：对 user_id 加盐做哈希取模 100，落进小于阈值的桶就开；同一个用户每次结果一致，百分比就是放量比例，改阈值即可逐步放量。",
+      "求值优先级固定：开关先看总开关，再判白名单命中直接放行，然后判黑名单直接关闭，最后才走百分比分桶，顺序写死保证结果可解释。",
+      "毫秒级回滚靠改配置而不是发版：关掉总开关或把百分比置 0，配置中心推送后各节点在秒级生效，同时保留版本号和历史记录以便审计和快速回退。",
+      "降级和兜底：配置拉取失败时用本地缓存的最后一份配置，求值异常默认按关闭处理，避免开关故障放大成业务故障。"
+    ]
+  },
+  {
+    "key": "design_search_suggest",
+    "want": "design",
+    "domain": "搜索",
+    "state": "required",
+    "question": "搜索框输入前缀时要在10毫秒内返回热门联想词，这个功能怎么设计",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "离线跑出前缀词典：对热词按前缀逐层聚合，每个前缀只留 Top N 个候选和权重，控制在百万级前缀内。",
+      "词典加载到本地内存（或 Redis 做多机共享），前缀查询走哈希或有序数组二分，单次查找是微秒级。",
+      "权重用近期搜索日志滚动更新，离线周期重建或增量推入，保证热词能跟得上。",
+      "热门前缀和无结果的前缀在接入层单独缓存，抗住热点流量并避免穿透到词典。",
+      "10 毫秒里包含网络和序列化开销，所以候选词控制在 10 个以内并压缩响应，超时可降级返回上周期词典。"
+    ],
+    "chars": 69,
+    "total_ms": 3067,
+    "answer": "这是搜索建议（typeahead）的经典场景：把前缀到候选词的映射预计算好放进内存，查询路径上只做一次查找和少量排序，不上数据库不实时算。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "离线跑出前缀词典：对热词按前缀逐层聚合，每个前缀只留 Top N 个候选和权重，控制在百万级前缀内。",
+      "词典加载到本地内存（或 Redis 做多机共享），前缀查询走哈希或有序数组二分，单次查找是微秒级。",
+      "权重用近期搜索日志滚动更新，离线周期重建或增量推入，保证热词能跟得上。",
+      "热门前缀和无结果的前缀在接入层单独缓存，抗住热点流量并避免穿透到词典。",
+      "10 毫秒里包含网络和序列化开销，所以候选词控制在 10 个以内并压缩响应，超时可降级返回上周期词典。"
+    ]
+  },
+  {
+    "key": "design_search_suggest",
+    "want": "design",
+    "domain": "搜索",
+    "state": "required",
+    "question": "搜索框输入前缀时要在10毫秒内返回热门联想词，这个功能怎么设计",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "把查询日志按小时或天聚合出热词榜，用 Trie 按前缀存储 Top-K 联想词，周期离线重建到内存，保证查找是 O(前缀长度加K)。",
+      "前端输入加 debounce 约100毫秒并丢弃乱序响应的过期结果，避免每个按键都打请求，实际 QPS 能压到原来的几分之一。",
+      "本地缓存挡绝大多数请求，命中返回；未命中的结果写回缓存并设短 TTL，让新热词分钟级生效，长尾前缀走兜底数据源。",
+      "每个节点存 Top-K 而非全量词，建树时按热度剪枝，单机可放百万级前缀，内存靠前缀共享自然压缩。",
+      "统计与检索分离：日志聚合和建树走离线链路，在线节点只读，重建时用双 buffer 原子切换，避免请求打到半成品。"
+    ],
+    "chars": 55,
+    "total_ms": 3088,
+    "answer": "这是搜索建议（typeahead）问题，本质是用前缀树加缓存把前缀到热词列表的映射预计算好，请求只做内存查找。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "把查询日志按小时或天聚合出热词榜，用 Trie 按前缀存储 Top-K 联想词，周期离线重建到内存，保证查找是 O(前缀长度加K)。",
+      "前端输入加 debounce 约100毫秒并丢弃乱序响应的过期结果，避免每个按键都打请求，实际 QPS 能压到原来的几分之一。",
+      "本地缓存挡绝大多数请求，命中返回；未命中的结果写回缓存并设短 TTL，让新热词分钟级生效，长尾前缀走兜底数据源。",
+      "每个节点存 Top-K 而非全量词，建树时按热度剪枝，单机可放百万级前缀，内存靠前缀共享自然压缩。",
+      "统计与检索分离：日志聚合和建树走离线链路，在线节点只读，重建时用双 buffer 原子切换，避免请求打到半成品。"
+    ]
+  },
+  {
+    "key": "design_comment_thread",
+    "want": "design",
+    "domain": "内容",
+    "state": "required",
+    "question": "设计评论和二级回复功能，还要支持热度排序、删除和分页",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 6,
+    "bullets": [
+      "评论表用 id、root_id、parent_id、path（如 /1/5/12/）和 depth 记录归属，root_id 指向顶层评论，二级回复按 root_id 聚合成一页。",
+      "查询一级评论按热度分页时，先用 root_id is null 加排序字段走联合索引拿 20 条，再用 root_id in (...) 一次性取这些评论下的回复，避免 N+1。",
+      "热度用独立的 hot_score 冗余字段，由点赞数、回复数按时间衰减公式算出来写回，排序直接走 (root_id, hot_score) 索引，不要每次查询现算。",
+      "删除做软删除，状态字段置为 deleted 保留占位，若该评论还有子回复则展示“该评论已删除”，删整个树时按 path 前缀批量更新。",
+      "分页用游标而不是 offset，一级评论按 (hot_score, id) 做 keyset 翻页，回复按 (root_id, created_at, id) 取全部或用游标，避免深分页性能塌陷。",
+      "计数（回复数、点赞数）用缓存或计数表，写评论时更新，避免每次 count(*) 扫表。"
+    ],
+    "chars": 44,
+    "total_ms": 4008,
+    "answer": "这是经典的树形评论系统，核心是用邻接表加物化路径把树压成可排序的扁平结构，避免递归查询。",
+    "raw_bullet_count": 6,
+    "app_bullets": [
+      "评论表用 id、root_id、parent_id、path（如 /1/5/12/）和 depth 记录归属，root_id 指向顶层评论，二级回复按 root_id 聚合成一页。",
+      "查询一级评论按热度分页时，先用 root_id is null 加排序字段走联合索引拿 20 条，再用 root_id in (...) 一次性取这些评论下的回复，避免 N+1。",
+      "热度用独立的 hot_score 冗余字段，由点赞数、回复数按时间衰减公式算出来写回，排序直接走 (root_id, hot_score) 索引，不要每次查询现算。",
+      "删除做软删除，状态字段置为 deleted 保留占位，若该评论还有子回复则展示“该评论已删除”，删整个树时按 path 前缀批量更新。",
+      "分页用游标而不是 offset，一级评论按 (hot_score, id) 做 keyset 翻页，回复按 (root_id, created_at, id) 取全部或用游标，避免深分页性能塌陷。"
+    ]
+  },
+  {
+    "key": "design_comment_thread",
+    "want": "design",
+    "domain": "内容",
+    "state": "required",
+    "question": "设计评论和二级回复功能，还要支持热度排序、删除和分页",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "评论表存 id、root_id、parent_id、path、depth、点赞数、回复数和创建时间，path 用祖先链前缀在回复时一次性写入，查某条评论的整棵子树就是一次 path 前缀匹配，不用递归。",
+      "热度排序用点赞数减反对数加回复数、再按时间做衰减的公式算出的 score 字段做索引，写入时更新或定时重算，分页用 score 加 id 的游标而不是 offset，避免新评论进来导致翻页重复。",
+      "二级结构限制展示层只渲染两层，parent_id 为空是一级，其余的 path 只存到一级祖先，这样每条一级评论的回复就是一维列表，排序和分页都只在这层做。",
+      "删除默认软删，把内容置空并标记 deleted 状态，保留节点和路径以维持子回复的树形结构；有子回复时显示已删除而不是整条移除。",
+      "分页按一级评论游标翻页，每条一级评论下的二级回复单独分页，接口分页参数带上 root_id 和 cursor，避免一次拉出全量回复。"
+    ],
+    "chars": 40,
+    "total_ms": 2870,
+    "answer": "这是典型的树形评论系统，核心是把无限层级拍平成带路径的扁平表，再按热度排序分页。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "评论表存 id、root_id、parent_id、path、depth、点赞数、回复数和创建时间，path 用祖先链前缀在回复时一次性写入，查某条评论的整棵子树就是一次 path 前缀匹配，不用递归。",
+      "热度排序用点赞数减反对数加回复数、再按时间做衰减的公式算出的 score 字段做索引，写入时更新或定时重算，分页用 score 加 id 的游标而不是 offset，避免新评论进来导致翻页重复。",
+      "二级结构限制展示层只渲染两层，parent_id 为空是一级，其余的 path 只存到一级祖先，这样每条一级评论的回复就是一维列表，排序和分页都只在这层做。",
+      "删除默认软删，把内容置空并标记 deleted 状态，保留节点和路径以维持子回复的树形结构；有子回复时显示已删除而不是整条移除。",
+      "分页按一级评论游标翻页，每条一级评论下的二级回复单独分页，接口分页参数带上 root_id 和 cursor，避免一次拉出全量回复。"
+    ]
+  },
+  {
+    "key": "design_job_dag",
+    "want": "design",
+    "domain": "调度",
+    "state": "required",
+    "question": "设计一个有任务依赖关系的批处理调度系统，失败可以重试但不能重复执行成功任务",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "用 DAG 描述依赖，任务表按 task_id 记录所属 job、上游依赖、状态（待执行/运行中/成功/失败）和重试次数，状态落库保证调度器重启后可恢复。",
+      "依赖就绪判定：只有所有上游状态为成功才把任务置为可调度，失败或运行中的上游会阻塞下游。",
+      "重试要幂等：成功任务直接跳过，只有失败和超时任务重新入队；每次重试用同一个业务幂等键，防止重复写入。",
+      "调度器采用拉取或抢占式加锁，用条件更新（状态从待执行改成运行中）保证一个任务在同一时刻只被一个 worker 拿走。",
+      "失败处理区分可重试和不可重试，超过最大重试次数后按策略标记 job 终止或触发告警，避免无限重试。"
+    ],
+    "chars": 52,
+    "total_ms": 2821,
+    "answer": "这是带 DAG 依赖的工作流调度，核心是把每个任务做成幂等且状态可持久化，失败重试时只重跑未成功的任务。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "用 DAG 描述依赖，任务表按 task_id 记录所属 job、上游依赖、状态（待执行/运行中/成功/失败）和重试次数，状态落库保证调度器重启后可恢复。",
+      "依赖就绪判定：只有所有上游状态为成功才把任务置为可调度，失败或运行中的上游会阻塞下游。",
+      "重试要幂等：成功任务直接跳过，只有失败和超时任务重新入队；每次重试用同一个业务幂等键，防止重复写入。",
+      "调度器采用拉取或抢占式加锁，用条件更新（状态从待执行改成运行中）保证一个任务在同一时刻只被一个 worker 拿走。",
+      "失败处理区分可重试和不可重试，超过最大重试次数后按策略标记 job 终止或触发告警，避免无限重试。"
+    ]
+  },
+  {
+    "key": "design_job_dag",
+    "want": "design",
+    "domain": "调度",
+    "state": "required",
+    "question": "设计一个有任务依赖关系的批处理调度系统，失败可以重试但不能重复执行成功任务",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "任务和依赖用一张 DAG 表描述，节点记录状态（等待/运行/成功/失败）和重试次数，调度器只跑前置全部为成功的节点。",
+      "每次执行生成一次 attempt 记录，用 task_id 加 attempt 做幂等键；成功的任务状态置为终态，重试只重跑失败节点，绝不重跑已成功节点。",
+      "任务本身要幂等：用唯一键或 upsert 落结果，这样即使出现重复投递，重复执行也不会产生副作用。",
+      "调度器用持久化队列或数据库轮询拉取就绪任务，节点完成时原子地更新状态并唤醒下游，避免并发重复调度。",
+      "依赖失败或超过最大重试次数时，把整个下游标记为阻塞并告警，而不是无限重试。"
+    ],
+    "chars": 64,
+    "total_ms": 2649,
+    "answer": "这是带 DAG 依赖的任务调度，本质是工作流引擎加精确一次语义，核心是把每个任务节点的执行状态持久化，靠状态机加幂等来控制重试。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "任务和依赖用一张 DAG 表描述，节点记录状态（等待/运行/成功/失败）和重试次数，调度器只跑前置全部为成功的节点。",
+      "每次执行生成一次 attempt 记录，用 task_id 加 attempt 做幂等键；成功的任务状态置为终态，重试只重跑失败节点，绝不重跑已成功节点。",
+      "任务本身要幂等：用唯一键或 upsert 落结果，这样即使出现重复投递，重复执行也不会产生副作用。",
+      "调度器用持久化队列或数据库轮询拉取就绪任务，节点完成时原子地更新状态并唤醒下游，避免并发重复调度。",
+      "依赖失败或超过最大重试次数时，把整个下游标记为阻塞并告警，而不是无限重试。"
+    ]
+  },
+  {
+    "key": "design_album_share",
+    "want": "design",
+    "domain": "权限",
+    "state": "required",
+    "question": "设计相册分享功能，链接可以设置过期时间和访问密码，用户还能随时撤销分享",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "分享表按 share_id 记录相册 ID、密码哈希、过期时间、状态和创建者，相册 ID 只存在服务端。",
+      "对外的分享链接只带一个高熵随机 token，服务端用 token 反查记录并校验过期与撤销状态，不暴露任何自增 ID。",
+      "访问密码用 bcrypt 或 argon2 加盐存哈希，校验通过后再签发一个短时效的访问凭证，避免每次请求都验密码。",
+      "撤销就是把记录状态置为 revoked 并让缓存失效，token 立即失效，历史访问日志保留用于审计。",
+      "下载或图片接口同样先校验 token 鉴权，不能在拿到真实图片地址后绕过分享权限直连。"
+    ],
+    "chars": 50,
+    "total_ms": 3270,
+    "answer": "这是带访问控制的分享令牌方案，核心是把每次分享建模成一条独立的可撤销记录，而不是直接暴露相册 ID。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "分享表按 share_id 记录相册 ID、密码哈希、过期时间、状态和创建者，相册 ID 只存在服务端。",
+      "对外的分享链接只带一个高熵随机 token，服务端用 token 反查记录并校验过期与撤销状态，不暴露任何自增 ID。",
+      "访问密码用 bcrypt 或 argon2 加盐存哈希，校验通过后再签发一个短时效的访问凭证，避免每次请求都验密码。",
+      "撤销就是把记录状态置为 revoked 并让缓存失效，token 立即失效，历史访问日志保留用于审计。",
+      "下载或图片接口同样先校验 token 鉴权，不能在拿到真实图片地址后绕过分享权限直连。"
+    ]
+  },
+  {
+    "key": "design_album_share",
+    "want": "design",
+    "domain": "权限",
+    "state": "required",
+    "question": "设计相册分享功能，链接可以设置过期时间和访问密码，用户还能随时撤销分享",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "分享表以 share_token 为主键（随机不可枚举，如 128 位），记录相册 ID、密码哈希、过期时间、状态（有效/已撤销）、创建者。",
+      "密码只存 bcrypt 哈希，不存明文；无密码时直接放行，有密码时校验通过后再用短期签名换取访问凭证，避免每次请求都传密码。",
+      "校验顺序固定：先查 token 是否存在且未撤销，再判过期，最后验密码，任一失败统一返回相同的失效提示，防止枚举。",
+      "相册内容走对象存储的私有读，用后端签发的临时 URL 下发，绝不把原始文件地址直接暴露在分享链接里。",
+      "撤销即把状态置为已撤销并记录时间，同时把 token 加入短期缓存黑名单，保证多实例下立即生效。"
+    ],
+    "chars": 62,
+    "total_ms": 2622,
+    "answer": "这本质上是带时效和鉴权的令牌化访问控制，核心是每次分享生成一个独立、可撤销的分享记录，访问时校验它的状态而不是校验用户身份。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "分享表以 share_token 为主键（随机不可枚举，如 128 位），记录相册 ID、密码哈希、过期时间、状态（有效/已撤销）、创建者。",
+      "密码只存 bcrypt 哈希，不存明文；无密码时直接放行，有密码时校验通过后再用短期签名换取访问凭证，避免每次请求都传密码。",
+      "校验顺序固定：先查 token 是否存在且未撤销，再判过期，最后验密码，任一失败统一返回相同的失效提示，防止枚举。",
+      "相册内容走对象存储的私有读，用后端签发的临时 URL 下发，绝不把原始文件地址直接暴露在分享链接里。",
+      "撤销即把状态置为已撤销并记录时间，同时把 token 加入短期缓存黑名单，保证多实例下立即生效。"
+    ]
+  },
+  {
+    "key": "design_local_lru_ttl",
+    "want": "design",
+    "domain": "本地组件",
+    "state": "local_only",
+    "question": "设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求你写代码",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "底层用 HashMap 存 key 到链表节点的映射，双向链表头部是最近使用的、尾部是最久未用的，get 和 put 命中后把节点移到头部，淘汰时从尾部删，读写都是 O(1)。",
+      "每个节点除了 key、value 再存一个过期时间戳，惰性删除为主：get 时发现已过期就删掉并返回空，put 时遇到过期节点直接覆盖；再配一个后台清理线程定期扫尾部，避免过期数据长期占内存。",
+      "并发用分段锁，把缓存按 key 哈希拆成多个段，每段一把锁各自维护自己的链表和容量，不同段互不阻塞；只在计算某段的容量和 LRU 淘汰时才需要该段的锁。",
+      "Map 和链表必须始终处在同一临界区里更新，否则会出现节点被删了但映射还在的悬挂引用，所以删除和移动节点这两个动作要在持有段锁时一起完成。",
+      "如果读多写少，可以升级成读写锁或者用 ConcurrentHashMap 加时间戳做近似 LRU，用命中率换吞吐量。"
+    ],
+    "chars": 48,
+    "total_ms": 3017,
+    "answer": "这是带 TTL 的线程安全 LRU 缓存，核心是把哈希表和双向链表组合起来，再用分段锁控制并发。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "底层用 HashMap 存 key 到链表节点的映射，双向链表头部是最近使用的、尾部是最久未用的，get 和 put 命中后把节点移到头部，淘汰时从尾部删，读写都是 O(1)。",
+      "每个节点除了 key、value 再存一个过期时间戳，惰性删除为主：get 时发现已过期就删掉并返回空，put 时遇到过期节点直接覆盖；再配一个后台清理线程定期扫尾部，避免过期数据长期占内存。",
+      "并发用分段锁，把缓存按 key 哈希拆成多个段，每段一把锁各自维护自己的链表和容量，不同段互不阻塞；只在计算某段的容量和 LRU 淘汰时才需要该段的锁。",
+      "Map 和链表必须始终处在同一临界区里更新，否则会出现节点被删了但映射还在的悬挂引用，所以删除和移动节点这两个动作要在持有段锁时一起完成。",
+      "如果读多写少，可以升级成读写锁或者用 ConcurrentHashMap 加时间戳做近似 LRU，用命中率换吞吐量。"
+    ]
+  },
+  {
+    "key": "design_local_lru_ttl",
+    "want": "design",
+    "domain": "本地组件",
+    "state": "local_only",
+    "question": "设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求你写代码",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "用 map 存 key 到链表节点的引用，双向链表维护访问顺序，命中就摘下来挂到表头，淘汰从表尾拿。",
+      "每个节点带 expireAt 时间戳，读的时候惰性判断是否过期，过期就当未命中并删掉，再配一个后台线程定期清理冷 key。",
+      "并发用分段锁或者 ConcurrentHashMap 加每段的锁，把链表操作限制在段内，避免一把全局锁把读也串起来。",
+      "缓存内部状态本身就是容器进程里的内存结构，不落库，重启即失效，key 用业务主键保证跨请求命中。",
+      "容量上限和过期时间做成构造参数，满了先按 LRU 淘汰最久未访问的，过期只是提前失效不改变淘汰顺序。"
+    ],
+    "chars": 41,
+    "total_ms": 2790,
+    "answer": "本质是哈希表加双向链表做 O(1) 的 LRU 淘汰，上面再叠过期时间和并发控制。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "用 map 存 key 到链表节点的引用，双向链表维护访问顺序，命中就摘下来挂到表头，淘汰从表尾拿。",
+      "每个节点带 expireAt 时间戳，读的时候惰性判断是否过期，过期就当未命中并删掉，再配一个后台线程定期清理冷 key。",
+      "并发用分段锁或者 ConcurrentHashMap 加每段的锁，把链表操作限制在段内，避免一把全局锁把读也串起来。",
+      "缓存内部状态本身就是容器进程里的内存结构，不落库，重启即失效，key 用业务主键保证跨请求命中。",
+      "容量上限和过期时间做成构造参数，满了先按 LRU 淘汰最久未访问的，过期只是提前失效不改变淘汰顺序。"
+    ]
+  },
+  {
+    "key": "design_virtual_list",
+    "want": "design",
+    "domain": "前端",
+    "state": "none",
+    "question": "前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "只渲染可视区加前后各一屏的缓冲区，滚动容器用一个撑满总高度的占位元素来驱动滚动条。",
+      "每个 item 渲染后读取真实高度存进缓存，总高度由已测高度加未测项的预估值累加，用前缀和二分定位起始下标。",
+      "滚动时按当前 scrollTop 反查应该渲染的区间，用 transform 把列表整体偏移到正确位置，避免白屏跳动。",
+      "上下各留缓冲并处理滚动方向，快速拖动滚动条时用预估高度先兜底，测量完成后再校正偏移。",
+      "高度变化时更新缓存和总高度，只重算受影响区间的前缀和，不整表重排。"
+    ],
+    "chars": 43,
+    "total_ms": 3394,
+    "answer": "这是虚拟滚动加不定高列表，核心是用运行时的元素测量代替预估高度，并把测量结果缓存下来。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "只渲染可视区加前后各一屏的缓冲区，滚动容器用一个撑满总高度的占位元素来驱动滚动条。",
+      "每个 item 渲染后读取真实高度存进缓存，总高度由已测高度加未测项的预估值累加，用前缀和二分定位起始下标。",
+      "滚动时按当前 scrollTop 反查应该渲染的区间，用 transform 把列表整体偏移到正确位置，避免白屏跳动。",
+      "上下各留缓冲并处理滚动方向，快速拖动滚动条时用预估高度先兜底，测量完成后再校正偏移。",
+      "高度变化时更新缓存和总高度，只重算受影响区间的前缀和，不整表重排。"
+    ]
+  },
+  {
+    "key": "design_virtual_list",
+    "want": "design",
+    "domain": "前端",
+    "state": "none",
+    "question": "前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "只维护可视区域加少量上下缓冲的节点，滚动时用哈希前缀和二分索引定位起始行，动态高度不强求公式估算。",
+      "每行渲染后回写真实高度，缓存到行索引数组，同时修正滚动总高度，避免滚动条跳动。",
+      "用 ResizeObserver 或 IntersectionObserver 观察行尺寸变化，重新计算前缀和并保持滚动位置稳定。",
+      "锚点校正：滚动时记录可视区第一行的偏移，高度变化后按该锚点还原位置，防止内容抖动。",
+      "整屏渲染交给 React.memo 或 vue virtual list 组件，DOM 节点数控制在几十个，滚动事件用 requestAnimationFrame 节流。"
+    ],
+    "chars": 37,
+    "total_ms": 2557,
+    "answer": "这是超长列表的虚拟滚动问题，核心是不要按条数渲染，只渲染视口内可见的节点。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "只维护可视区域加少量上下缓冲的节点，滚动时用哈希前缀和二分索引定位起始行，动态高度不强求公式估算。",
+      "每行渲染后回写真实高度，缓存到行索引数组，同时修正滚动总高度，避免滚动条跳动。",
+      "用 ResizeObserver 或 IntersectionObserver 观察行尺寸变化，重新计算前缀和并保持滚动位置稳定。",
+      "锚点校正：滚动时记录可视区第一行的偏移，高度变化后按该锚点还原位置，防止内容抖动。",
+      "整屏渲染交给 React.memo 或 vue virtual list 组件，DOM 节点数控制在几十个，滚动事件用 requestAnimationFrame 节流。"
+    ]
+  },
+  {
+    "key": "design_id_generator",
+    "want": "design",
+    "domain": "基础设施",
+    "state": "optional",
+    "question": "设计一个分布式唯一 ID 生成器，要求趋势递增、高可用，而且不能依赖单机自增数据库",
+    "sample": 2,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "整体采用 worker 本地生成 + 中心只发号段：每个实例持有一个号段（step 通常 1000），用完再向中心申请下一段，中心不可用时本地还有缓冲，避免每次生成都打远端。",
+      "ID 结构建议 64 位：符号位保留 0，41 位毫秒时间戳保证趋势递增，10 位 workerId 标识实例，12 位序列号用于同毫秒并发，组合出全局唯一且整体递增。",
+      "workerId 必须持久化且不重复：启动时写入数据库或 ZooKeeper 抢占一个唯一 slot，进程重启要复用原 ID，否则同一毫秒序列会撞。",
+      "中心用数据库记录每个 worker 的最大分配值（max_id 行 + 乐观锁或带原子更新的 SQL），号段在内存中双 buffer 预取，主库故障时读备用或直接走本地缓存，保证高可用。",
+      "时钟回拨要兜底：记录上一次时间戳，回拨小于阈值等待追平，超过阈值则拒绝发号或报警，绝不回退时间戳，否则会重复。"
+    ],
+    "chars": 66,
+    "total_ms": 3304,
+    "answer": "这是经典的分布式 ID 生成问题，核心是拿号段或时间戳换吞吐，用预分配和故障切换换高可用，同时把趋势递增作为排序友好性而非严格连续。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "整体采用 worker 本地生成 + 中心只发号段：每个实例持有一个号段（step 通常 1000），用完再向中心申请下一段，中心不可用时本地还有缓冲，避免每次生成都打远端。",
+      "ID 结构建议 64 位：符号位保留 0，41 位毫秒时间戳保证趋势递增，10 位 workerId 标识实例，12 位序列号用于同毫秒并发，组合出全局唯一且整体递增。",
+      "workerId 必须持久化且不重复：启动时写入数据库或 ZooKeeper 抢占一个唯一 slot，进程重启要复用原 ID，否则同一毫秒序列会撞。",
+      "中心用数据库记录每个 worker 的最大分配值（max_id 行 + 乐观锁或带原子更新的 SQL），号段在内存中双 buffer 预取，主库故障时读备用或直接走本地缓存，保证高可用。",
+      "时钟回拨要兜底：记录上一次时间戳，回拨小于阈值等待追平，超过阈值则拒绝发号或报警，绝不回退时间戳，否则会重复。"
+    ]
+  },
+  {
+    "key": "design_id_generator",
+    "want": "design",
+    "domain": "基础设施",
+    "state": "optional",
+    "question": "设计一个分布式唯一 ID 生成器，要求趋势递增、高可用，而且不能依赖单机自增数据库",
+    "sample": 3,
+    "kind": "design",
+    "has_code": false,
+    "bullet_count": 5,
+    "bullets": [
+      "ID 结构用 41 位毫秒时间戳加 10 位机器 ID 加 12 位序列号，单机每毫秒可出 4096 个，整体趋势递增。",
+      "机器位不能手配，用注册中心或 etcd 分配 workerId，机器上线时租约占位、下线后过期回收，避免重复。",
+      "时钟回拨是主要故障点，回拨小于 5 毫秒就等到追平，回拨过大直接拒绝发号并告警，不能回退时间戳。",
+      "高可用靠无状态多实例，每个实例自己算 ID，某个节点挂了其他节点照常发号，不需要中心协调。",
+      "如果要求严格递增而非趋势递增，就退化成单点，只能靠号段模式加持久化缓存兜底。"
+    ],
+    "chars": 65,
+    "total_ms": 2916,
+    "answer": "这是 Snowflake 这类号段式 ID 生成问题，核心是把 ID 拆成时间戳、机器位和序列号，保证趋势递增又不需要单机数据库。",
+    "raw_bullet_count": 5,
+    "app_bullets": [
+      "ID 结构用 41 位毫秒时间戳加 10 位机器 ID 加 12 位序列号，单机每毫秒可出 4096 个，整体趋势递增。",
+      "机器位不能手配，用注册中心或 etcd 分配 workerId，机器上线时租约占位、下线后过期回收，避免重复。",
+      "时钟回拨是主要故障点，回拨小于 5 毫秒就等到追平，回拨过大直接拒绝发号并告警，不能回退时间戳。",
+      "高可用靠无状态多实例，每个实例自己算 ID，某个节点挂了其他节点照常发号，不需要中心协调。",
+      "如果要求严格递增而非趋势递增，就退化成单点，只能靠号段模式加持久化缓存兜底。"
+    ]
+  },
+  {
+    "key": "coding_quicksort",
+    "want": "coding",
+    "domain": "算法",
+    "state": "none",
+    "question": "来手写一个快速排序吧，用 Java",
+    "sample": 2,
+    "kind": "coding",
+    "has_code": true,
+    "bullet_count": 0,
+    "bullets": [],
+    "chars": 613,
+    "total_ms": 2201,
+    "answer": "分治，选基准把数组分成两半再递归，平均 O(n log n)，最坏 O(n²)，空间 O(log n)。\n```java\npublic void quickSort(int[] nums, int left, int right) {\n    if (left >= right) {\n        return;\n    }\n    int pivot = nums[left];\n    int i = left;\n    int j = right;\n    while (i < j) {\n        // 先从右往左找第一个小于基准的数\n        while (i < j && nums[j] >= pivot) {\n            j--;\n        }\n        nums[i] = nums[j];\n        // 再从左往右找第一个大于基准的数\n        while (i < j && nums[i] <= pivot) {\n            i++;\n        }\n        nums[j] = nums[i];\n    }\n    // 基准归位\n    nums[i] = pivot;\n    quickSort(nums, left, i - 1);\n    quickSort(nums, i + 1, right);\n}\n```",
+    "raw_bullet_count": 0,
+    "app_bullets": []
+  },
+  {
+    "key": "coding_quicksort",
+    "want": "coding",
+    "domain": "算法",
+    "state": "none",
+    "question": "来手写一个快速排序吧，用 Java",
+    "sample": 3,
+    "kind": "coding",
+    "has_code": true,
+    "bullet_count": 0,
+    "bullets": [],
+    "chars": 630,
+    "total_ms": 2922,
+    "answer": "分治思想：选一个基准值把数组划分成左右两部分再递归，平均时间复杂度 O(n log n)，递归栈空间 O(log n)。\n```java\npublic void quickSort(int[] nums, int left, int right) {\n    if (left >= right) {\n        return;\n    }\n    int pivot = nums[left];\n    int i = left;\n    int j = right;\n    while (i < j) {\n        // 先从右往左找第一个小于基准的数\n        while (i < j && nums[j] >= pivot) {\n            j--;\n        }\n        nums[i] = nums[j];\n        // 再从左往右找第一个大于基准的数\n        while (i < j && nums[i] <= pivot) {\n            i++;\n        }\n        nums[j] = nums[i];\n    }\n    // 基准归位，i 就是最终位置\n    nums[i] = pivot;\n    quickSort(nums, left, i - 1);\n    quickSort(nums, i + 1, right);\n}\n```",
+    "raw_bullet_count": 0,
+    "app_bullets": []
+  },
+  {
+    "key": "coding_lru",
+    "want": "coding",
+    "domain": "算法",
+    "state": "none",
+    "question": "实现一个 LRU 缓存，说一下思路然后写出来",
+    "sample": 2,
+    "kind": "coding",
+    "has_code": true,
+    "bullet_count": 0,
+    "bullets": [],
+    "chars": 1772,
+    "total_ms": 2948,
+    "answer": "哈希表 + 双向链表：哈希表 O(1) 定位节点，双向链表维护访问顺序，头部是最近使用、尾部是最久未用；get 和 put 都是 O(1)，空间 O(capacity)。\n```java\nclass LRUCache {\n    class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final int capacity;\n    private final Map<Integer, Node> map;\n    // 虚拟头尾节点，省去空链表判断\n    private final Node head;\n    private final Node tail;\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        moveToHead(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            node.value = value;\n            moveToHead(node);\n            return;\n        }\n        Node newNode = new Node(key, value);\n        map.put(key, newNode);\n        addToHead(newNode);\n        if (map.size() > capacity) {\n            // 淘汰尾部节点，同时从 map 里删掉\n            Node removed = tail.prev;\n            removeNode(removed);\n            map.remove(removed.key);\n        }\n    }\n\n    private void addToHead(Node node) {\n        node.prev = head;\n        node.next = head.next;\n        head.next.prev = node;\n        head.next = node;\n    }\n\n    private void removeNode(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n\n    private void moveToHead(Node node) {\n        removeNode(node);\n        addToHead(node);\n    }\n}\n```",
+    "raw_bullet_count": 0,
+    "app_bullets": []
+  },
+  {
+    "key": "coding_lru",
+    "want": "coding",
+    "domain": "算法",
+    "state": "none",
+    "question": "实现一个 LRU 缓存，说一下思路然后写出来",
+    "sample": 3,
+    "kind": "coding",
+    "has_code": true,
+    "bullet_count": 0,
+    "bullets": [],
+    "chars": 1887,
+    "total_ms": 3119,
+    "answer": "哈希表加双向链表：哈希表存 key 到节点的映射，双向链表维护访问顺序，最近使用的放头部，淘汰时从尾部删。get 和 put 都是 O(1)，空间 O(capacity)。\n```java\nimport java.util.HashMap;\nimport java.util.Map;\n\npublic class LRUCache {\n\n    // 双向链表节点\n    private static class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final int capacity;\n    private final Map<Integer, Node> map;\n    private final Node head; // 虚拟头，head.next 是最近使用的\n    private final Node tail; // 虚拟尾，tail.prev 是最久未使用的\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        // 访问过就要挪到头部\n        moveToHead(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            node.value = value;\n            moveToHead(node);\n            return;\n        }\n        Node newNode = new Node(key, value);\n        map.put(key, newNode);\n        addToHead(newNode);\n        // 超出容量就淘汰尾部节点\n        if (map.size() > capacity) {\n            Node last = tail.prev;\n            removeNode(last);\n            map.remove(last.key);\n        }\n    }\n\n    private void addToHead(Node node) {\n        node.next = head.next;\n        node.prev = head;\n        head.next.prev = node;\n        head.next = node;\n    }\n\n    private void removeNode(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n\n    private void moveToHead(Node node) {\n        removeNode(node);\n        addToHead(node);\n    }\n}\n```",
+    "raw_bullet_count": 0,
+    "app_bullets": []
+  },
+  {
+    "key": "coding_design_lru",
+    "want": "coding",
+    "domain": "算法",
+    "state": "none",
+    "question": "设计一个 LRU 缓存，并用 Java 完整实现 get 和 put",
+    "sample": 2,
+    "kind": "coding",
+    "has_code": true,
+    "bullet_count": 0,
+    "bullets": [],
+    "chars": 1900,
+    "total_ms": 3635,
+    "answer": "用哈希表加双向链表：哈希表 O(1) 定位节点，双向链表维护访问顺序，最近使用的放头部，超容量就删尾部，get 和 put 都是 O(1)，空间 O(capacity)。\n```java\nimport java.util.HashMap;\nimport java.util.Map;\n\npublic class LRUCache {\n\n    // 双向链表节点，同时存 key 方便淘汰时从 map 里删掉\n    class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final int capacity;\n    private final Map<Integer, Node> map;\n    private final Node head; // 虚拟头，head.next 是最久未使用\n    private final Node tail; // 虚拟尾，tail.prev 是最近使用\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        // 访问过就移到链表尾部，标记为最近使用\n        moveToTail(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            node.value = value;\n            moveToTail(node);\n            return;\n        }\n        // 容量满了先淘汰最久未使用的节点\n        if (map.size() == capacity) {\n            Node oldest = head.next;\n            remove(oldest);\n            map.remove(oldest.key);\n        }\n        Node newNode = new Node(key, value);\n        map.put(key, newNode);\n        addToTail(newNode);\n    }\n\n    private void moveToTail(Node node) {\n        remove(node);\n        addToTail(node);\n    }\n\n    private void remove(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n\n    private void addToTail(Node node) {\n        node.prev = tail.prev;\n        node.next = tail;\n        tail.prev.next = node;\n        tail.prev = node;\n    }\n}\n```",
+    "raw_bullet_count": 0,
+    "app_bullets": []
+  },
+  {
+    "key": "coding_design_lru",
+    "want": "coding",
+    "domain": "算法",
+    "state": "none",
+    "question": "设计一个 LRU 缓存，并用 Java 完整实现 get 和 put",
+    "sample": 3,
+    "kind": "coding",
+    "has_code": true,
+    "bullet_count": 0,
+    "bullets": [],
+    "chars": 1798,
+    "total_ms": 3149,
+    "answer": "用哈希表加双向链表，哈希表 O(1) 定位节点，双向链表维护访问顺序，头部是最近使用、尾部是最久未用，get 和 put 都是 O(1)，空间 O(capacity)。\n```java\nclass LRUCache {\n    class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final int capacity;\n    private final java.util.Map<Integer, Node> map;\n    // 虚拟头尾节点，省掉边界判断\n    private final Node head;\n    private final Node tail;\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new java.util.HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        // 访问过就移到头部，标记为最近使用\n        moveToHead(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            node.value = value;\n            moveToHead(node);\n            return;\n        }\n        Node newNode = new Node(key, value);\n        map.put(key, newNode);\n        addToHead(newNode);\n        // 超出容量就淘汰尾部节点\n        if (map.size() > capacity) {\n            Node last = tail.prev;\n            removeNode(last);\n            map.remove(last.key);\n        }\n    }\n\n    private void addToHead(Node node) {\n        node.prev = head;\n        node.next = head.next;\n        head.next.prev = node;\n        head.next = node;\n    }\n\n    private void removeNode(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n\n    private void moveToHead(Node node) {\n        removeNode(node);\n        addToHead(node);\n    }\n}\n```",
+    "raw_bullet_count": 0,
+    "app_bullets": []
+  },
+  {
+    "key": "concept_index",
+    "want": "knowledge",
+    "domain": "数据库",
+    "state": "none",
+    "question": "说说 MySQL 的聚簇索引和非聚簇索引有什么区别",
+    "sample": 2,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "InnoDB 里表数据本身就是按主键组织的聚簇索引，没主键会用唯一非空列，再没有就隐式生成一个 row_id。",
+      "回表是随机 IO，二级索引覆盖不到要查的列时，MySQL 可能直接走全表扫描更便宜。"
+    ],
+    "chars": 160,
+    "total_ms": 2600,
+    "answer": "聚簇索引的叶子节点直接存整行数据，一张表只能有一个，通常是主键，所以按主键查一次 B+ 树就到数据了；非聚簇索引的叶子节点存的是索引列加主键值，查到之后还要拿主键回表再查一次聚簇索引。所以二级索引查询要多一次回表，覆盖索引能省掉这一步；另外聚簇索引因为按主键顺序存，范围查询和排序更友好，但主键最好用自增的，避免页分裂。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "InnoDB 里表数据本身就是按主键组织的聚簇索引，没主键会用唯一非空列，再没有就隐式生成一个 row_id。",
+      "回表是随机 IO，二级索引覆盖不到要查的列时，MySQL 可能直接走全表扫描更便宜。"
+    ]
+  },
+  {
+    "key": "concept_index",
+    "want": "knowledge",
+    "domain": "数据库",
+    "state": "none",
+    "question": "说说 MySQL 的聚簇索引和非聚簇索引有什么区别",
+    "sample": 3,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "主键要短，因为每个二级索引的叶子都存一份主键值，主键长了所有二级索引一起变大。",
+      "没有主键时 InnoDB 会选唯一非空列，都没有就隐式建一个 6 字节 row_id 当聚簇索引。"
+    ],
+    "chars": 130,
+    "total_ms": 2162,
+    "answer": "区别在数据行存在哪：InnoDB 的聚簇索引就是主键索引，叶子节点直接存整行数据，所以一张表只能有一个；非聚簇索引是二级索引，叶子节点存的是索引列加主键值，查到之后要拿主键回表再查一次聚簇索引。所以二级索引查询通常要走两遍 B+ 树，覆盖索引能命中就不用回表。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "主键要短，因为每个二级索引的叶子都存一份主键值，主键长了所有二级索引一起变大。",
+      "没有主键时 InnoDB 会选唯一非空列，都没有就隐式建一个 6 字节 row_id 当聚簇索引。"
+    ]
+  },
+  {
+    "key": "method_cpu",
+    "want": "knowledge",
+    "domain": "排障",
+    "state": "none",
+    "question": "线上 Java 服务 CPU 突然到 100%，你会怎么排查",
+    "sample": 2,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "真实排查一般两轮：第一轮 top -Hp + jstack 定位线程，第二轮看 GC 日志和堆内存确认是计算密集还是内存压力。",
+      "别急着上 arthas，线上先加 -F 落现场，避免重启把证据丢了。"
+    ],
+    "chars": 213,
+    "total_ms": 2925,
+    "answer": "线上 CPU 打满，我按“先定位线程、再看栈、最后看 GC”三步走：先用 top -Hp 找到 PID 下占 CPU 最高的线程，把线程 ID 转成十六进制，再用 jstack 打出栈去比对 nid，定位到具体哪段代码。如果栈里集中在 GC 线程，那就是内存问题，用 jstat -gcutil 看 FGC 频率和耗时；如果是业务线程在死循环或正则回溯，就取那几帧看方法名。定位后先在流量入口限流或摘掉问题实例止损，再谈修复。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "真实排查一般两轮：第一轮 top -Hp + jstack 定位线程，第二轮看 GC 日志和堆内存确认是计算密集还是内存压力。",
+      "别急着上 arthas，线上先加 -F 落现场，避免重启把证据丢了。"
+    ]
+  },
+  {
+    "key": "method_cpu",
+    "want": "knowledge",
+    "domain": "排障",
+    "state": "none",
+    "question": "线上 Java 服务 CPU 突然到 100%，你会怎么排查",
+    "sample": 3,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "连接数高的话先加 -H 确认是业务线程还是 GC 线程，GC 线程占满一般配 jstat 看老年代。",
+      "如果 jstack 抓不到，用 arthas 的 thread -n 3 直接看最忙的三个栈更省事。"
+    ],
+    "chars": 160,
+    "total_ms": 2464,
+    "answer": "先定位哪个进程哪个线程，线上最快的办法是 top 找到 pid，再用 top -Hp 看是哪几个线程在烧 CPU，然后把线程号转成十六进制，去 jstack 里对哪段代码。常见就那么几类：死循环、正则回溯、频繁 Full GC 占着 GC 线程、或者锁竞争唤醒大量线程，定位到栈之后再看是线程池配置问题还是代码逻辑问题。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "连接数高的话先加 -H 确认是业务线程还是 GC 线程，GC 线程占满一般配 jstat 看老年代。",
+      "如果 jstack 抓不到，用 arthas 的 thread -n 3 直接看最忙的三个栈更省事。"
+    ]
+  },
+  {
+    "key": "method_cache_breakdown",
+    "want": "knowledge",
+    "domain": "缓存",
+    "state": "none",
+    "question": "缓存击穿是什么，常见解决办法有哪些",
+    "sample": 2,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "和缓存雪崩的区别是：雪崩是大批 key 同时失效，击穿是单个热点 key 失效。",
+      "如果要求强一致就不能用逻辑过期，只能互斥锁加重试，牺牲可用性。"
+    ],
+    "chars": 187,
+    "total_ms": 2724,
+    "answer": "缓存击穿是某个热点 key 过期的瞬间，大量请求同时打到数据库，本质是单 key 失效引发的并发穿透。常见解法有三类：一是互斥锁，只让一个线程回源重建，其余线程短暂等待；二是热点 key 逻辑过期，value 里存过期时间但物理不过期，发现逻辑过期就异步重建、先返回旧值；三是提前预热加随机过期时间，避免集中失效。互斥锁最简单但会阻塞请求，逻辑过期不阻塞但要容忍短暂脏数据。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "和缓存雪崩的区别是：雪崩是大批 key 同时失效，击穿是单个热点 key 失效。",
+      "如果要求强一致就不能用逻辑过期，只能互斥锁加重试，牺牲可用性。"
+    ]
+  },
+  {
+    "key": "method_cache_breakdown",
+    "want": "knowledge",
+    "domain": "缓存",
+    "state": "none",
+    "question": "缓存击穿是什么，常见解决办法有哪些",
+    "sample": 3,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "互斥锁用 setnx 实现，注意设超时并做双重检查，拿到锁后再查一次缓存。",
+      "逻辑过期把过期时间存在 value 里、key 本身不过期，读到逻辑过期就返回旧值并异步刷新。"
+    ],
+    "chars": 110,
+    "total_ms": 2058,
+    "answer": "缓存击穿是某个热点 key 过期的瞬间，大量并发请求直接打到数据库上。常见解决办法是加互斥锁，让一个线程回源重建缓存、其他线程等待重试，或者对热点 key 逻辑过期不删除、异步更新。核心是保证同一时刻只有一个请求去查库。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "互斥锁用 setnx 实现，注意设超时并做双重检查，拿到锁后再查一次缓存。",
+      "逻辑过期把过期时间存在 value 里、key 本身不过期，读到逻辑过期就返回旧值并异步刷新。"
+    ]
+  },
+  {
+    "key": "method_slow_api",
+    "want": "knowledge",
+    "domain": "排障",
+    "state": "none",
+    "question": "一个接口突然变慢，你一般按什么步骤定位问题",
+    "sample": 2,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "如果只有部分实例慢，先看那一台机器的 CPU、GC、连接池和是否有热点流量打进来。",
+      "看是延迟涨还是吞吐降：延迟涨通常是等下游，吞吐降一般是线程池或连接池被打满。"
+    ],
+    "chars": 135,
+    "total_ms": 2616,
+    "answer": "我按从外到内分四步定位：先看监控确认是整体变慢还是个别实例，再用 trace 把耗时拆到具体阶段，然后查这一段的日志和慢查询，最后本地或压测复现验证。经验上先怀疑下游依赖和慢 SQL，因为大部分接口变慢都不是应用代码本身算得慢，而是线程卡在等数据库或者等第三方返回值上。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "如果只有部分实例慢，先看那一台机器的 CPU、GC、连接池和是否有热点流量打进来。",
+      "看是延迟涨还是吞吐降：延迟涨通常是等下游，吞吐降一般是线程池或连接池被打满。"
+    ]
+  },
+  {
+    "key": "method_slow_api",
+    "want": "knowledge",
+    "domain": "排障",
+    "state": "none",
+    "question": "一个接口突然变慢，你一般按什么步骤定位问题",
+    "sample": 3,
+    "kind": "knowledge",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "先止血再定位：线上优先限流或回滚最近变更，别在故障中现场调试。",
+      "每层都要拿到证据再往下走，避免凭直觉直接怀疑某个组件。"
+    ],
+    "chars": 177,
+    "total_ms": 2333,
+    "answer": "我会先按分层排查：确认是全局还是单接口、再看应用层、依赖层、最后到系统和 DB。第一步看监控和日志，确认是这一个接口还是全站慢、是最近变更引起的还是缓慢劣化，先缩小范围。第二步按耗时拆链路，看是入口排队、业务逻辑、还是下游调用和慢 SQL，把时间花在占比最大的那段。第三步再去对应层深挖，应用看线程栈和 GC，DB 看执行计划和锁等待，网络看连接和超时。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "先止血再定位：线上优先限流或回滚最近变更，别在故障中现场调试。",
+      "每层都要拿到证据再往下走，避免凭直觉直接怀疑某个组件。"
+    ]
+  },
+  {
+    "key": "behavioral_incident",
+    "want": "behavioral",
+    "domain": "行为题",
+    "state": "none",
+    "question": "说说你处理过最严重的一次线上事故，以及你是怎么复盘的",
+    "sample": 2,
+    "kind": "behavioral",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "一定要给数字：影响多少用户、持续多久、几点恢复。",
+      "复盘别只说流程，要落到一个你改掉的具体动作，比如加了告警或改了发布顺序。"
+    ],
+    "chars": 50,
+    "total_ms": 1978,
+    "answer": "这题只能用你自己的真实经历，我替不了你。挑一次你真的扛过的事故，重点讲你当时做的判断和后来改了什么。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "一定要给数字：影响多少用户、持续多久、几点恢复。",
+      "复盘别只说流程，要落到一个你改掉的具体动作，比如加了告警或改了发布顺序。"
+    ]
+  },
+  {
+    "key": "behavioral_incident",
+    "want": "behavioral",
+    "domain": "行为题",
+    "state": "none",
+    "question": "说说你处理过最严重的一次线上事故，以及你是怎么复盘的",
+    "sample": 3,
+    "kind": "behavioral",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "复盘部分要说清三件事：直接原因、为什么没被更早发现、你落地了什么改动。",
+      "影响面、恢复耗时这类数字一定要给具体的，没有数字的故事面试官记不住。"
+    ],
+    "chars": 68,
+    "total_ms": 2235,
+    "answer": "这题只能用你自己的真实经历，我替不了你。挑一次你真正值班处理过的事故，重点讲你当时做了什么判断、为什么那么决定，最后给一个能量化的结果。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "复盘部分要说清三件事：直接原因、为什么没被更早发现、你落地了什么改动。",
+      "影响面、恢复耗时这类数字一定要给具体的，没有数字的故事面试官记不住。"
+    ]
+  },
+  {
+    "key": "behavioral_design",
+    "want": "behavioral",
+    "domain": "行为题",
+    "state": "none",
+    "question": "讲一个你主导过的系统设计项目，你遇到的最大分歧是什么",
+    "sample": 2,
+    "kind": "behavioral",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "分歧要具体，是选型之争还是数据模型之争，别讲成团队气氛问题。",
+      "一定要说清最后是谁的决定、上线后的效果数字，这比过程更被看重。"
+    ],
+    "chars": 68,
+    "total_ms": 2158,
+    "answer": "这题只能用你真实做过的项目，我替不了你。挑一个你真正拍过板的系统，重点讲那个分歧：双方各自的方案、你用什么论据说服或妥协、最后结果如何。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "分歧要具体，是选型之争还是数据模型之争，别讲成团队气氛问题。",
+      "一定要说清最后是谁的决定、上线后的效果数字，这比过程更被看重。"
+    ]
+  },
+  {
+    "key": "behavioral_design",
+    "want": "behavioral",
+    "domain": "行为题",
+    "state": "none",
+    "question": "讲一个你主导过的系统设计项目，你遇到的最大分歧是什么",
+    "sample": 3,
+    "kind": "behavioral",
+    "has_code": false,
+    "bullet_count": 2,
+    "bullets": [
+      "一定要给一个能被追问的细节，比如容量、QPS 或上线后的数据。",
+      "分歧可以是和数据一致性、成本或进度相关的，但必须说清你最后怎么收口。"
+    ],
+    "chars": 58,
+    "total_ms": 2234,
+    "answer": "这题只能讲你自己的真实经历。挑一个你真正拍过板的设计，重点说分歧双方各自在争什么、你依据什么做的决定、最后结果怎样。",
+    "raw_bullet_count": 2,
+    "app_bullets": [
+      "一定要给一个能被追问的细节，比如容量、QPS 或上线后的数据。",
+      "分歧可以是和数据一致性、成本或进度相关的，但必须说清你最后怎么收口。"
+    ]
+  }
+]

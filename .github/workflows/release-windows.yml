@@ -1,0 +1,77 @@
+name: Release Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without v prefix, e.g. 0.1.1"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark GitHub release as prerelease"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.11.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pkg set version="${{ inputs.version }}"
+          node -e 'const fs=require("fs"); const p="src-tauri/tauri.conf.json"; const c=JSON.parse(fs.readFileSync(p,"utf8")); c.version=process.env.VERSION; fs.writeFileSync(p, JSON.stringify(c,null,2)+"\n");'
+          # Cargo.toml is bumped too: the Tauri CLI rejects a build whose
+          # tauri.conf.json version disagrees with the crate version.
+          node -e 'const fs=require("fs"); const p="src-tauri/Cargo.toml"; const s=fs.readFileSync(p,"utf8"); fs.writeFileSync(p, s.replace(/^version = ".*"$/m, `version = "${process.env.VERSION}"`));'
+        env:
+          VERSION: ${{ inputs.version }}
+
+      # Bundling is driven by src-tauri/tauri.windows.conf.json, which Tauri
+      # merges automatically on Windows: NSIS only (no MSI, so no WiX needed),
+      # per-user install, and an embedded WebView2 bootstrapper.
+      - name: Build Tauri app
+        run: pnpm tauri build
+
+      - name: Find release artifacts
+        id: artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          SETUP=$(find src-tauri/target/release/bundle/nsis -name '*.exe' -type f | head -n 1)
+          test -n "$SETUP"
+          echo "Found installer: $SETUP"
+          echo "setup=$SETUP" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}-windows
+          name: Meetly v${{ inputs.version }} (Windows)
+          prerelease: ${{ inputs.prerelease }}
+          files: |
+            ${{ steps.artifacts.outputs.setup }}

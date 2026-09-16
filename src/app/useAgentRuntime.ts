@@ -1,3 +1,4 @@
+import { emit, listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef } from "react";
 import {
   AgentRuntime,
@@ -11,9 +12,17 @@ import {
   type PrefetchProvider,
   type WakeEvent,
 } from "../runtime/agent";
-import { debugLog } from "./platform";
+import { debugLog, isTauriRuntime } from "./platform";
+import { formatSuggestionText } from "./coachMessageFormat";
 import { matchPrefetchCache, speculativeSimilarity } from "./speculativePrefetch";
-import { SPECULATIVE_REUSE_THRESHOLD } from "./constants";
+import {
+  COACH_ANSWERED_EVENT,
+  COACH_ANSWER_BRIDGE_CHARS,
+  SESSION_MEMORY_CLEARED_EVENT,
+  SPECULATIVE_REUSE_THRESHOLD,
+  VOICE_ASK_ANSWERED_EVENT,
+  VOICE_ASK_ANSWER_BRIDGE_CHARS,
+} from "./constants";
 import type {
   AudioSource,
   CoachMessage,
@@ -36,6 +45,20 @@ export function useAgentRuntime(ctx: MeetlyState) {
     contextRef.current = new ContextStore();
   }
 
+  /**
+   * Wipes coach memory and tells the voice-overlay window to drop its mirrored
+   * copy. Always go through here instead of calling `contextRef.current.clear()`
+   * directly: the overlay is a separate webview holding its own copy of the
+   * coach answers, so a bare clear() leaves the previous interview alive there
+   * and the next Fn-held question gets answered with stale history.
+   */
+  const resetCoachMemory = useCallback((sessionId: string | null) => {
+    contextRef.current?.clear();
+    contextRef.current?.setSessionId(sessionId);
+    if (!isTauriRuntime()) return;
+    void emit(SESSION_MEMORY_CLEARED_EVENT, {}).catch(() => undefined);
+  }, []);
+
   if (!journalRef.current) {
     journalRef.current = new CoachEventJournal();
   }
@@ -57,8 +80,7 @@ export function useAgentRuntime(ctx: MeetlyState) {
     }
 
     currentSessionIdRef.current = sessionId;
-    contextRef.current?.clear();
-    contextRef.current?.setSessionId(sessionId);
+    resetCoachMemory(sessionId);
     setCoachActivity(ctx, null);
     debugLog(`[agent] context reset session=${sessionId ?? "none"}`);
   }, [ctx.interviewSession?.id]);
@@ -79,6 +101,12 @@ export function useAgentRuntime(ctx: MeetlyState) {
     });
   }, [ctx.audioSource, ctx.meetingGoal, ctx.sessionKind]);
 
+  const primeSessionFacts = useCallback((segment: TranscriptSegment) => {
+    contextRef.current?.primeFacts(segment);
+  }, []);
+
+  const sessionAnchors = useCallback(() => contextRef.current?.anchors() ?? "", []);
+
   const pushTranscriptFinal = useCallback((segment: TranscriptSegment) => {
     contextRef.current?.pushTranscript(segment);
 
@@ -98,7 +126,7 @@ export function useAgentRuntime(ctx: MeetlyState) {
         })
       : null;
 
-    const detectedWake = detectSttWake(segment, ctx.sessionKind);
+    const detectedWake = detectSttWake(segment, ctx.sessionKind, ctx.meetingPerspective);
     const wake = detectedWake
       ? {
           ...detectedWake,
@@ -113,7 +141,16 @@ export function useAgentRuntime(ctx: MeetlyState) {
 
     debugLog(`[agent] stt wake segment=${segment.id} reason=${wake.reason}`);
     runtimeRef.current?.wake(wake);
-  }, [ctx.sessionKind]);
+  }, [ctx.sessionKind, ctx.meetingPerspective]);
+
+  /**
+   * Aborts any coach run in flight. Used by "new conversation": the request
+   * itself keeps running in the background (a Tauri invoke can't be revoked),
+   * but its result is discarded and the runtime is free immediately.
+   */
+  const cancelCoach = useCallback((reason: string) => {
+    runtimeRef.current?.cancel(reason);
+  }, []);
 
   const wakeEnter = useCallback(() => {
     const sessionId = currentSessionIdRef.current;
@@ -125,9 +162,16 @@ export function useAgentRuntime(ctx: MeetlyState) {
   const wakeSessionStart = useCallback((sessionId: string, hasDocuments: boolean) => {
     if (currentSessionIdRef.current !== sessionId) {
       currentSessionIdRef.current = sessionId;
-      contextRef.current?.clear();
-      contextRef.current?.setSessionId(sessionId);
+      resetCoachMemory(sessionId);
     }
+    // With no uploaded documents there is nothing for the coach to work from yet
+    // — the interviewer hasn't spoken. Waking here only produced a placeholder
+    // card ("I don't see a question in the transcript yet") right at the opening.
+    if (!hasDocuments) {
+      debugLog(`[agent] session wake skipped session=${sessionId} reason=no_context_yet`);
+      return;
+    }
+
     const wake = createSessionStartWake(hasDocuments);
     wake.sessionId = sessionId;
     wake.evidenceEventIds = sessionStartEventIdRef.current ? [sessionStartEventIdRef.current] : [];
@@ -142,8 +186,7 @@ export function useAgentRuntime(ctx: MeetlyState) {
     hasDocuments: boolean;
   }) => {
     currentSessionIdRef.current = input.sessionId;
-    contextRef.current?.clear();
-    contextRef.current?.setSessionId(input.sessionId);
+    resetCoachMemory(input.sessionId);
     journalRef.current?.clear();
     const event = journalRef.current?.appendEvent({
       sessionId: input.sessionId,
@@ -230,7 +273,75 @@ export function useAgentRuntime(ctx: MeetlyState) {
     manualAskEventIdsRef.current.delete(askId);
   }, []);
 
+  /**
+   * Folds a manual-ask answer into coach memory.
+   *
+   * The manual path already carries its own `turns` to Rust, but the coach reads
+   * a different store — until now the two memories never met. Ask one question
+   * by hand, then let the interviewer follow up on it, and the coach answered as
+   * if nothing had ever been said about the topic.
+   */
+  const recordManualAnswer = useCallback((question: string, answer: string) => {
+    const text = (answer || "").trim();
+    if (!text) return;
+    contextRef.current?.pushCoachTurn({
+      question,
+      answer: text,
+      atMs: Date.now(),
+      origin: "manual",
+    });
+    debugLog(`[agent] manual answer folded into coach memory chars=${text.length}`);
+  }, []);
+
+  /**
+   * The reverse direction: everything the coach (or an earlier manual ask) has
+   * already answered, for the manual-ask path to send along as `turns`. Without
+   * it, pressing Fn after a coach card starts a brand new conversation.
+   */
+  const coachMemoryForAsk = useCallback(() => contextRef.current?.coachTurnSnapshot() ?? [], []);
+
+  // Voice Ask runs inside the voice-overlay window — a separate webview with its
+  // own ContextStore instance, so it can't share memory by reference. Bridge the
+  // answers back over the event bus instead. One-directional on purpose: the
+  // overlay keeps its own conversation state and does not need the coach's.
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    listen<{ question?: string; answer?: string }>(VOICE_ASK_ANSWERED_EVENT, (event) => {
+      const payload = event.payload;
+      const answer = (payload?.answer ?? "").trim();
+      if (!answer) return;
+      contextRef.current?.pushCoachTurn({
+        question: payload?.question ?? "",
+        answer: answer.slice(0, VOICE_ASK_ANSWER_BRIDGE_CHARS),
+        atMs: Date.now(),
+        origin: "manual",
+      });
+      debugLog(`[agent] voice-ask answer bridged chars=${answer.length}`);
+    })
+      .then((fn) => {
+        if (disposed) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   return {
+    cancelCoach,
+    coachMemoryForAsk,
+    recordManualAnswer,
+    primeSessionFacts,
     pushTranscriptFinal,
     recordCaptureFailed,
     recordCaptureStarted,
@@ -238,6 +349,7 @@ export function useAgentRuntime(ctx: MeetlyState) {
     recordManualAskStarted,
     recordSessionEnded,
     recordSessionStarted,
+    sessionAnchors,
     wakeEnter,
     wakeSessionStart,
   };
@@ -301,6 +413,16 @@ function buildCallbacks(ctx: MeetlyState, journal: CoachEventJournal): AgentRunt
       appendWakeTransition(journal, wake, "ignored", reason);
       debugLog(`[agent] wake skipped wake=${wake.kind} reason=${reason}`);
     },
+    onCancelled: (reason) => {
+      // The runtime already dropped the run; clear everything the UI was
+      // showing for it so the panel is usable again immediately.
+      ctx.setCoachDraft(null);
+      ctx.setIsCoachThinking(false);
+      ctx.coachInFlightRef.current = false;
+      ctx.coachToolTracesRef.current = [];
+      setCoachActivity(ctx, null);
+      debugLog(`[agent] coach cancelled reason=${reason}`);
+    },
     onRetry: (attempt, reason, wake) => {
       appendWakeTransition(journal, wake, "running", reason, { attempt });
       ctx.setCoachDraft(buildCoachMessage(wake, ""));
@@ -315,8 +437,12 @@ function buildCallbacks(ctx: MeetlyState, journal: CoachEventJournal): AgentRunt
       appendWakeTransition(journal, wake, "spoken", "message_committed", {
         answerChars: suggestion.answer.length,
       });
-      const message = buildCoachMessage(wake, suggestion.answer, ctx.coachToolTracesRef.current);
-      const next = [...ctx.coachMessagesRef.current, message].slice(-8);
+      const message = buildCoachMessage(
+        wake,
+        formatSuggestionText(suggestion),
+        ctx.coachToolTracesRef.current
+      );
+      const next = appendInQuestionOrder(ctx.coachMessagesRef.current, message);
       ctx.coachMessagesRef.current = next;
       ctx.setCoachMessages(next);
       ctx.setCoachDraft(null);
@@ -328,11 +454,18 @@ function buildCallbacks(ctx: MeetlyState, journal: CoachEventJournal): AgentRunt
         label: "说话中",
       }, 1_200);
       debugLog(`[agent] coach message wake=${wake.kind} chars=${suggestion.answer.length}`);
+      // Publish to the voice-overlay window, which is a separate webview and
+      // therefore blind to this store. It sends these along as history, so a
+      // Fn-held follow-up continues the interview instead of restarting it.
+      void emit(COACH_ANSWERED_EVENT, {
+        question: wake.evidence[0] ?? "",
+        answer: suggestion.answer.slice(0, COACH_ANSWER_BRIDGE_CHARS),
+      }).catch(() => undefined);
     },
     onError: (message, wake) => {
       appendWakeTransition(journal, wake, "failed", "run_failed");
       const errorMessage = buildCoachMessage(wake, `教练生成失败：${message}`, ctx.coachToolTracesRef.current);
-      const next = [...ctx.coachMessagesRef.current, errorMessage].slice(-8);
+      const next = appendInQuestionOrder(ctx.coachMessagesRef.current, errorMessage);
       ctx.coachMessagesRef.current = next;
       ctx.setCoachMessages(next);
       ctx.setCoachDraft(null);
@@ -420,12 +553,25 @@ function setCoachActivity(
 function buildCoachMessage(wake: WakeEvent, text: string, toolTraces: CoachToolTrace[] = []): CoachMessage {
   return {
     id: wake.id,
-    createdAt: Date.now(),
+    // When the question was asked, not when the answer finished. The workspace
+    // timeline merges these cards with manual asks by `createdAt`, so dating a
+    // card by its completion time sorts a slow answer after questions that came
+    // later — the coach looks like it is answering backwards.
+    createdAt: wake.createdAtMs,
     trigger: toCoachTrigger(wake),
     text,
     contextPreview: wake.evidence.join("\n").slice(0, 260),
     toolTraces,
   };
+}
+
+/// Adds a finished card and keeps the panel in the order the questions were
+/// asked. Answers normally arrive in that order already, but a question can be
+/// held back (cooldown, retry) and land after a later one.
+function appendInQuestionOrder(current: CoachMessage[], message: CoachMessage): CoachMessage[] {
+  return [...current, message]
+    .sort((left, right) => left.createdAt - right.createdAt)
+    .slice(-8);
 }
 
 function toCoachTrigger(wake: WakeEvent): CoachTrigger {

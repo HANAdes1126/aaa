@@ -1,5 +1,4 @@
 import {
-  ArrowUp,
   Asterisk,
   Camera,
   Check,
@@ -12,27 +11,26 @@ import {
   FileText,
   Globe2,
   Keyboard,
-  ListTree,
   Mic,
   MicOff,
   PanelTopClose,
   Plus,
   Settings,
+  Square,
   TerminalSquare,
   TriangleAlert,
 } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { AgentChatTurn, CoachMessage, CoachToolTrace, TranscriptSegment } from "../app/types";
+import type { AgentChatTurn, CoachMessage, CoachToolTrace } from "../app/types";
+import { DESIGN_KIND, stripPictographs } from "../app/coachMessageFormat";
 import type { useMeetlyState } from "../app/useMeetlyState";
 import { SettingsContent } from "../SettingsApp";
-import { AudioBars } from "./AudioBars";
 
 type WorkspaceView = "agent" | "fn" | "dictation" | "meetings" | "logs" | "settings";
 
 type AgentWorkspaceProps = {
-  askAssistant: (message?: string) => Promise<void>;
   askScreenshot: (question?: string) => Promise<void>;
   clearConversation: () => void;
   closePanel: () => void;
@@ -59,7 +57,6 @@ const NAV_ITEMS: Array<{
 ];
 
 export function AgentWorkspace({
-  askAssistant,
   askScreenshot,
   clearConversation,
   closePanel,
@@ -71,20 +68,9 @@ export function AgentWorkspace({
   toggleStealth,
 }: AgentWorkspaceProps) {
   const [view, setView] = useState<WorkspaceView>(initialView);
-  const [draft, setDraft] = useState("");
-
-  const submit = () => {
-    if (ctx.isAsking) return;
-    const message = draft.trim() || "需要帮助";
-    setDraft("");
-    void askAssistant(message);
-  };
-
-  const handleInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== "Enter" || event.shiftKey) return;
-    event.preventDefault();
-    submit();
-  };
+  // While either pipeline is generating, + becomes "stop and start over" —
+  // the button has to stay clickable, that's the only way out of a stall.
+  const isBusy = ctx.isAsking || ctx.isCoachThinking;
 
   return (
     <section className="meetly-workspace" aria-label="Meetly 工作台">
@@ -123,6 +109,18 @@ export function AgentWorkspace({
             <span>{ctx.state === "listening" ? "结束会话" : "开始会话"}</span>
             <span className={ctx.state === "listening" ? "session-dot is-live" : "session-dot"} />
           </button>
+          {ctx.sessionKind === "remote" && (
+            <button
+              className="workspace-record-toggle"
+              title="切换录音通道（只录对面 / 对面 + 我的声音）"
+              aria-label="切换录音通道"
+              onClick={() => ctx.setRecordUserMic((value) => !value)}
+            >
+              <span className="workspace-record-label">录音</span>
+              <span className="workspace-record-value">{ctx.recordUserMic ? "对面+我" : "对面"}</span>
+              <ChevronDown />
+            </button>
+          )}
         </div>
       </aside>
 
@@ -135,8 +133,13 @@ export function AgentWorkspace({
           <div className="workspace-header-actions">
             {view === "agent" && (
               <>
-                <button className="workspace-header-button" title="新对话" aria-label="新对话" onClick={clearConversation}>
-                  <Plus />
+                <button
+                  className="workspace-header-button"
+                  title={isBusy ? "停止当前回答并新建会话" : "新对话"}
+                  aria-label={isBusy ? "停止当前回答并新建会话" : "新对话"}
+                  onClick={clearConversation}
+                >
+                  {isBusy ? <Square /> : <Plus />}
                 </button>
                 <button className="workspace-header-button" title="上传资料" aria-label="上传资料" onClick={openFilePicker}>
                   <FileText />
@@ -146,7 +149,7 @@ export function AgentWorkspace({
                   title="截图提问"
                   aria-label="截图提问"
                   disabled={ctx.isAsking}
-                  onClick={() => void askScreenshot(draft.trim() || undefined)}
+                  onClick={() => void askScreenshot()}
                 >
                   <Camera />
                 </button>
@@ -176,29 +179,6 @@ export function AgentWorkspace({
                 coachMessages={ctx.coachMessages}
                 isAsking={ctx.isAsking}
               />
-              <div className="agent-composer-shell">
-                <textarea
-                  data-testid="agent-input"
-                  autoFocus={initialView === "agent"}
-                  rows={2}
-                  value={draft}
-                  placeholder="问会议里的任何事"
-                  onChange={(event) => setDraft(event.target.value)}
-                  onKeyDown={handleInputKeyDown}
-                />
-                <div className="agent-composer-footer">
-                  <span>{ctx.state === "listening" ? "实时上下文已连接" : "会话上下文已保留"}</span>
-                  <button
-                    data-testid="agent-send"
-                    title="发送"
-                    aria-label="发送"
-                    disabled={ctx.isAsking}
-                    onClick={submit}
-                  >
-                    <ArrowUp />
-                  </button>
-                </div>
-              </div>
             </div>
             {ctx.state === "listening" && <TranscriptRail ctx={ctx} />}
           </div>
@@ -390,52 +370,42 @@ function toolTraceStatus(status: CoachToolTrace["status"]) {
 }
 
 function TranscriptRail({ ctx }: { ctx: ReturnType<typeof useMeetlyState> }) {
-  const lines = ctx.transcriptHistory.slice(-7);
-  const status = ctx.transcriptError
-    ? "异常"
-    : ctx.partialTranscript
-      ? "转写中"
-      : ctx.state === "listening"
-        ? "正在听"
-        : "已暂停";
+  // Compact one-line strip: only the latest transcript (live partial if present,
+  // otherwise the newest final segment). History list, header, waveform and
+  // footer all removed — the panel previously stole vertical space from the
+  // coach answer above and crowded the rail.
+  const partial = ctx.partialTranscript;
+  const latest = ctx.transcriptHistory.length > 0
+    ? ctx.transcriptHistory[ctx.transcriptHistory.length - 1]
+    : null;
 
-  return (
-    <aside className="transcript-rail">
-      <div className="transcript-rail-header">
-        <div>
-          <p>实时转录</p>
-          <span>{status}</span>
-        </div>
-        <AudioBars level={ctx.audioLevel} tone="cool" variant="compact" />
+  let body: React.ReactNode;
+  if (partial) {
+    body = (
+      <div className="transcript-line is-live">
+        <span>现在</span>
+        <p title={partial.text}>{partial.text}</p>
       </div>
-      <div className="transcript-lines">
-        {lines.length === 0 && !ctx.partialTranscript ? (
-          <p className="transcript-empty">暂无转录</p>
-        ) : (
-          lines.map((segment) => <TranscriptLine key={segment.id} segment={segment} />)
-        )}
-        {ctx.partialTranscript && (
-          <div className="transcript-line is-live">
-            <span>现在</span>
-            <p>{ctx.partialTranscript.text}</p>
-          </div>
-        )}
+    );
+  } else if (latest) {
+    const speaker = latest.speaker === "user" ? "我" : "对方";
+    body = (
+      <div className="transcript-line">
+        <span>{speaker}</span>
+        <p title={latest.text}>{latest.text}</p>
       </div>
-      <div className="transcript-rail-footer">
-        <ListTree />
-        <span>{ctx.transcriptHistory.length} 条记录</span>
+    );
+  } else {
+    const idleLabel = ctx.state === "listening" ? "正在听" : "已暂停";
+    body = (
+      <div className="transcript-line transcript-line--empty">
+        <span>{idleLabel}</span>
+        <p>—</p>
       </div>
-    </aside>
-  );
-}
+    );
+  }
 
-function TranscriptLine({ segment }: { segment: TranscriptSegment }) {
-  return (
-    <div className="transcript-line">
-      <span>{segment.speaker === "user" ? "我" : "对方"}</span>
-      <p>{segment.text}</p>
-    </div>
-  );
+  return <aside className="transcript-rail">{body}</aside>;
 }
 
 function WorkspaceLedger({ view, ctx }: { view: Exclude<WorkspaceView, "agent">; ctx: ReturnType<typeof useMeetlyState> }) {
@@ -523,9 +493,12 @@ function getLedgerContent(view: Exclude<WorkspaceView, "agent">, ctx: ReturnType
 function formatSuggestion(suggestion: AgentChatTurn["suggestion"] & {}) {
   if (!suggestion) return "";
   return [
-    suggestion.answer,
-    suggestion.bullets.length ? suggestion.bullets.map((bullet) => `- ${bullet}`).join("\n") : null,
-    suggestion.clarifyingQuestion ? `> ${suggestion.clarifyingQuestion}` : null,
+    stripPictographs(suggestion.answer),
+    suggestion.bullets.length && suggestion.kind === DESIGN_KIND ? "设计思路" : null,
+    suggestion.bullets.length
+      ? suggestion.bullets.map((bullet) => `- ${stripPictographs(bullet)}`).join("\n")
+      : null,
+    suggestion.clarifyingQuestion ? `> ${stripPictographs(suggestion.clarifyingQuestion)}` : null,
   ].filter(Boolean).join("\n\n");
 }
 

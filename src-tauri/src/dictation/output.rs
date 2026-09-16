@@ -48,7 +48,7 @@ where
         return copied("Dictation was cancelled. Text was copied.", false);
     }
 
-    if !handy_keys::check_accessibility() {
+    if !crate::dictation::accessibility_granted() {
         return copied(
             "Accessibility permission is required for automatic paste. Text was copied.",
             false,

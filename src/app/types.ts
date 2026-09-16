@@ -61,6 +61,12 @@ export type AssistantSuggestion = {
   answer: string;
   bullets: string[];
   clarifyingQuestion: string | null;
+  /// "knowledge" (complete spoken answer), "design" (one-line framing plus
+  /// 3-5 primary outline points), "coding" (approach plus code), or
+  /// "behavioral" (the answer is the candidate's own history, so `answer` is coaching).
+  /// Optional because error and empty placeholders never carry one; anything
+  /// missing or unrecognized is treated as "knowledge".
+  kind?: string;
 };
 
 export type AgentChatTurn = {

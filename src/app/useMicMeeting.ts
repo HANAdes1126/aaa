@@ -97,6 +97,7 @@ export function useMicMeeting(
     ctx.prefetchInFlightRef.current = null;
     ctx.prefetchCacheRef.current = null;
     ctx.setPrefetchStatus("idle");
+    ctx.setPendingTranscriptCount(0);
     ctx.setAudioLevel(0);
     ctx.setState("idle");
     const endedAt = Date.now();
@@ -159,7 +160,8 @@ export function useMicMeeting(
       ctx.micStopRequestedRef.current = false;
 
       const remote = ctx.sessionKind === "remote";
-      const capture = await safeInvoke<MeetingCaptureStatus>("start_meeting_capture", { remote });
+      const recordUserMic = ctx.recordUserMic;
+      const capture = await safeInvoke<MeetingCaptureStatus>("start_meeting_capture", { remote, recordUserMic });
       const anyReady = capture.system.ready || capture.microphone.ready;
       if (!anyReady) {
         throw new Error(
@@ -169,12 +171,17 @@ export function useMicMeeting(
 
       if (capture.system.ready) agent.recordCaptureStarted(nextSession.id, "system");
       else if (remote) agent.recordCaptureFailed(nextSession.id, "system");
+      // Only treat a missing mic as a failure when the session actually wants
+      // it (remote + recordUserMic, or in-person). A candidate-only remote
+      // meeting deliberately skips the mic, so don't warn about it.
       if (capture.microphone.ready) agent.recordCaptureStarted(nextSession.id, "microphone");
-      else agent.recordCaptureFailed(nextSession.id, "microphone");
+      else if (recordUserMic || !remote) agent.recordCaptureFailed(nextSession.id, "microphone");
 
       const degradedMessages = [
         remote && !capture.system.ready ? `未捕获对方声音：${capture.system.message ?? "系统音频不可用"}` : null,
-        !capture.microphone.ready ? `未捕获你的声音：${capture.microphone.message ?? "麦克风不可用"}` : null,
+        (recordUserMic || !remote) && !capture.microphone.ready
+          ? `未捕获你的声音：${capture.microphone.message ?? "麦克风不可用"}`
+          : null,
       ].filter(Boolean);
       ctx.setTranscriptError(degradedMessages.length > 0 ? degradedMessages.join("；") : null);
       ctx.setAudioLevel(0.35);
@@ -252,6 +259,7 @@ function resetSessionUi(ctx: MeetlyState, session: SessionActions) {
   ctx.setLatestTranscript(null);
   ctx.setPartialTranscript(null);
   ctx.setTranscriptHistory([]);
+  ctx.setPendingTranscriptCount(0);
   ctx.setAssistantSuggestion(null);
   ctx.setAssistantDraft("");
   ctx.setAssistantError(null);

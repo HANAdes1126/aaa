@@ -135,6 +135,7 @@ mod tests {
             provider_id: ProviderId::XiaomiMimo,
             base_url: "https://api.xiaomimimo.com/v1/chat/completions".to_string(),
             model: "mimo-v2.5-asr".to_string(),
+            vision_model: "mimo-v2.5-asr".to_string(),
             api_key: "secret".to_string(),
         });
         let body = provider.request_body("data:audio/wav;base64,AAAA".to_string());
@@ -172,6 +173,7 @@ mod tests {
             provider_id: ProviderId::XiaomiMimo,
             base_url: "https://api.xiaomimimo.com/v1/chat/completions".to_string(),
             model: "mimo-v2.5-asr".to_string(),
+            vision_model: "mimo-v2.5-asr".to_string(),
             api_key: std::env::var("MIMO_API_KEY").expect("MIMO_API_KEY is required"),
         });
         let request = BatchAsrRequest::new(

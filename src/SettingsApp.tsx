@@ -17,6 +17,8 @@ type ProviderConfig = {
   providerId: ProviderId;
   baseUrl: string;
   model: string;
+  /** Optional override used only for screenshot analysis; blank means "same as 模型". */
+  visionModel?: string | null;
   mmprojPath?: string | null;
 };
 
@@ -62,6 +64,7 @@ function useProviderSection(kind: ProviderKind) {
   const [providerOptions, setProviderOptions] = useState<ProviderDescriptor[]>([]);
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
+  const [visionModel, setVisionModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [mmprojPath, setMmprojPath] = useState("");
   const [hasStoredKey, setHasStoredKey] = useState(false);
@@ -80,6 +83,7 @@ function useProviderSection(kind: ProviderKind) {
       setProviderOptions(options);
       setBaseUrl(config.baseUrl);
       setModel(config.model);
+      setVisionModel(config.visionModel ?? "");
       setMmprojPath(config.mmprojPath ?? "");
       const stored = await invoke<boolean>("has_api_key", { kind });
       setHasStoredKey(stored);
@@ -101,6 +105,10 @@ function useProviderSection(kind: ProviderKind) {
         providerId,
         baseUrl,
         model,
+        // Blank means "reuse 模型" on the Rust side, so send null rather than
+        // an empty string — otherwise a stray space would silently become the
+        // model name and every screenshot would 404.
+        visionModel: visionModel.trim() ? visionModel.trim() : null,
         apiKey,
         mmprojPath: mmprojPath.trim() ? mmprojPath : null,
       });
@@ -115,7 +123,7 @@ function useProviderSection(kind: ProviderKind) {
     } finally {
       setIsSaving(false);
     }
-  }, [kind, providerId, baseUrl, model, apiKey, mmprojPath]);
+  }, [kind, providerId, baseUrl, model, visionModel, apiKey, mmprojPath]);
 
   const selectProvider = (nextProviderId: ProviderId) => {
     setProviderId(nextProviderId);
@@ -123,6 +131,9 @@ function useProviderSection(kind: ProviderKind) {
     if (!descriptor) return;
     setBaseUrl(descriptor.defaultBaseUrl);
     setModel(descriptor.defaultModel);
+    // Switching provider invalidates the vision override too: a model name is
+    // only meaningful against the gateway it came from.
+    setVisionModel("");
     setMmprojPath("");
     setTestResult(null);
   };
@@ -150,6 +161,8 @@ function useProviderSection(kind: ProviderKind) {
     setBaseUrl,
     model,
     setModel,
+    visionModel,
+    setVisionModel,
     apiKey,
     setApiKey,
     mmprojPath,
@@ -231,6 +244,22 @@ export function ProviderSection({
             placeholder={isLocal ? "/Users/.../Qwen3-ASR-1.7B-Q8_0.gguf" : undefined}
           />
         </label>
+        {kind === "llm" && !isLocal && (
+          <label className="col-span-2">
+            <span className={LABEL}>
+              截图识题模型 <span className="text-white/40">（留空则与上面的模型一致）</span>
+            </span>
+            <input
+              className={FIELD}
+              value={section.visionModel}
+              onChange={(event) => section.setVisionModel(event.target.value)}
+              placeholder="claude-opus-5"
+            />
+            <span className="mt-1 block text-[11px] leading-relaxed text-white/38">
+              截图只在你主动按下时跑一次，可以用更强、更慢的模型；实时语音教练仍用上面那个。
+            </span>
+          </label>
+        )}
         {isLocal && (
           <label className="col-span-2">
             <span className={LABEL}>mmproj 音频投影路径</span>

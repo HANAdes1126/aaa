@@ -203,13 +203,14 @@ fn bounded_suggestion(suggestion: &AssistantSuggestion) -> AssistantSuggestion {
         bullets: suggestion
             .bullets
             .iter()
-            .take(3)
+            .take(5)
             .filter_map(|bullet| normalize_optional(bullet, 1_000))
             .collect(),
         clarifying_question: suggestion
             .clarifying_question
             .as_deref()
             .and_then(|question| normalize_optional(question, 1_000)),
+        kind: suggestion.kind.clone(),
     }
 }
 
@@ -290,6 +291,7 @@ mod tests {
                 answer: format!("answer {index}"),
                 bullets: Vec::new(),
                 clarifying_question: None,
+                kind: "knowledge".to_string(),
             },
         }
     }

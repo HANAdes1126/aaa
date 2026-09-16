@@ -1,0 +1,1679 @@
+[
+  {
+    "key": "signin_mysql_only",
+    "question": "如果是要设计一个签到系统，不能用Redis、消息队列，只能用MySQL，而且还需要实现每日签到排行榜功能，应该怎么设计？",
+    "want": "design",
+    "run": 1,
+    "arm": "before",
+    "total_ms": 2946,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是签到打卡加日榜的经典题，没有 Redis 就用 MySQL 同时承担幂等写入和排行聚合，核心是签到表保证一人一天一条、后台做增量汇总。",
+      "bullets": [
+        "签到表以 user_id + sign_date 建唯一索引，插入重复键即视为已签到，天然幂等且防并发重复。",
+        "排行榜不实时扫签到表，用一张按天聚合的汇总表存 user_id、sign_date、连续天数、当日第几个签到的序号，读数 O(1)。",
+        "排名用当天签到记录按时间排序生成，并发下用汇总表上的自增主键或按 sign_date 分组取行号来定序号。",
+        "连续签到天数在插入成功后读前一天记录加一，放在同一事务里更新，避免并发下断连统计出错。",
+        "高并发用 INSERT ... ON DUPLICATE KEY 加唯一索引兜底，热点天可加本地缓存或把日榜截止时间固定，减少实时聚合压力。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "硬约束": true,
+        "排行榜语义": true,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": true
+      },
+      "signal_count": 5,
+      "signal_total": 5,
+      "forbidden_positive": [
+        "redis",
+        "本地缓存"
+      ]
+    }
+  },
+  {
+    "key": "signin_mysql_only",
+    "question": "如果是要设计一个签到系统，不能用Redis、消息队列，只能用MySQL，而且还需要实现每日签到排行榜功能，应该怎么设计？",
+    "want": "design",
+    "run": 1,
+    "arm": "after",
+    "total_ms": 2819,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是单库 MySQL 下的签到加当日排行榜，核心难点是用一张签到流水表同时支撑幂等签到和实时名次，避免全表扫描排序。",
+      "bullets": [
+        "签到表以 (user_id, sign_date) 做唯一键，插入成功即签到成功，天然幂等，重复签到返回已签；日期用 DATE 或当天 0 点的整数。",
+        "另建一张按天聚合的计数表 sign_rank，主键 (sign_date, user_id)，每次签到在同一事务里 INSERT ... ON DUPLICATE KEY UPDATE sign_count = sign_count + 1，把积分累加收口成单行更新。",
+        "排行榜直接按 (sign_date, sign_count DESC, user_id) 建联合索引，查当日 Top N 走索引有序扫描，只读前 N 行，不做 filesort。",
+        "需要看某人名次时，用 sign_count 做 COUNT 统计比自己分数高的人数加一，配合上面的索引是范围扫描而非全表。",
+        "热点用户同一行竞争用事务保证一致性，每日历史数据按 sign_date 分区或定期归档，控制单表体积和索引深度。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "硬约束": true,
+        "排行榜语义": true,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": true
+      },
+      "signal_count": 5,
+      "signal_total": 5,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "signin_mysql_only",
+    "question": "如果是要设计一个签到系统，不能用Redis、消息队列，只能用MySQL，而且还需要实现每日签到排行榜功能，应该怎么设计？",
+    "want": "design",
+    "run": 2,
+    "arm": "before",
+    "total_ms": 2754,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是典型的「单库签到 + 当日榜单」问题，核心是用一张签到流水表做主数据，靠唯一索引保证幂等，榜单按天在 MySQL 里聚合出结果。",
+      "bullets": [
+        "签到流水表按 (user_id, sign_date) 建唯一索引，签到就是 insert ... on duplicate key update，用唯一冲突天然幂等，不需要前置查询。",
+        "每日重复签到、补签、连续天数这类状态跟着流水表走，连续天数只存 last_sign_date 和连续的 current_streak，签到时按日期差更新，避免全表扫描。",
+        "当日排行榜用一张按 (sign_date, user_id) 的表存当天的签到序，签到时写入 sign_time，榜单查询直接按 sign_time 排序取前 N，走 (sign_date, sign_time) 联合索引，避免临时表和全表排序。",
+        "热点问题靠行锁粒度解决：同一天不能按天分桶锁，所以用签到流水表的唯一索引做并发控制，重复请求直接命中唯一冲突。",
+        "跨天切换和榜单刷新用定时任务或查询时按 sign_date 过滤，历史榜单数据按天归档，避免单表无限增长。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "硬约束": true,
+        "排行榜语义": false,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": true
+      },
+      "signal_count": 4,
+      "signal_total": 5,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "signin_mysql_only",
+    "question": "如果是要设计一个签到系统，不能用Redis、消息队列，只能用MySQL，而且还需要实现每日签到排行榜功能，应该怎么设计？",
+    "want": "design",
+    "run": 2,
+    "arm": "after",
+    "total_ms": 3160,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是一个签到加每日排行榜的问题，核心是用 MySQL 单库把签到写入、连续天数和当日排名三件事收敛到少数几张表上，难点在排行榜的实时聚合不能压垮写入。",
+      "bullets": [
+        "签到表以 user_id + sign_date 做唯一索引，INSERT IGNORE 保证幂等，天然防重复签到。",
+        "用户表按 user_id 存 last_sign_date 和 continuous_days：签到日等于 last_sign_date 加一天则加一，否则重置为 1，用行锁在事务里更新。",
+        "当日排行榜不实时排序，改为按 sign_date 分组统计，MySQL 8 可用窗口函数 ROW_NUMBER 按签到时间排序取前 N，否则由定时任务把当日结果落到 rank 快照表。",
+        "名次口径要先定死：同一天内按签到时间先后排，先到先得，这样只依赖事件本身的顺序，不需要额外算分。",
+        "读接口直接查快照表，写入只碰签到表和用户表，把排名计算与签到事务解耦，避免每次签到都触发全表排序。"
+      ],
+      "clarifying": "排行榜是按签到时间先到先得，还是按连续签到天数排？如果是后者，同分时用什么规则打破平局？"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "硬约束": true,
+        "排行榜语义": true,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": false
+      },
+      "signal_count": 4,
+      "signal_total": 5,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "signin_mysql_only",
+    "question": "如果是要设计一个签到系统，不能用Redis、消息队列，只能用MySQL，而且还需要实现每日签到排行榜功能，应该怎么设计？",
+    "want": "design",
+    "run": 3,
+    "arm": "before",
+    "total_ms": 2368,
+    "parsed": {
+      "kind": "design",
+      "answer": "这本质上是把签到和排行榜都收敛到一张按天写的签到流水表上，用唯一索引保证幂等，用汇总表承载排行榜。",
+      "bullets": [
+        "签到表用 user_id 加签到日期做联合唯一索引，插入即幂等，重复签到靠唯一键冲突直接忽略，同时记录连续签到天数。",
+        "排行榜不能每次扫全表聚合，每天用定时任务把当天签到人数和用户连续天数汇总到一张结算表，查询只读这张表。",
+        "同分用户的排名用连续签到天数作为次级排序键，再以最早签到时间兜底，保证名次稳定且可复现。",
+        "连续天数在签到时基于前一天记录加一，断签则重置为 1，这个状态存在签到表里，不依赖外部缓存。",
+        "高并发下靠 INSERT IGNORE 扛住重复请求，热点读通过按日期分区的汇总表或本地缓存降低单表压力。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "硬约束": true,
+        "排行榜语义": true,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": true
+      },
+      "signal_count": 5,
+      "signal_total": 5,
+      "forbidden_positive": [
+        "本地缓存"
+      ]
+    }
+  },
+  {
+    "key": "signin_mysql_only",
+    "question": "如果是要设计一个签到系统，不能用Redis、消息队列，只能用MySQL，而且还需要实现每日签到排行榜功能，应该怎么设计？",
+    "want": "design",
+    "run": 3,
+    "arm": "after",
+    "total_ms": 3209,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是一个签到记录加日榜排行的问题，只能用 MySQL 的话，核心是把\"当天连续签到\"这件热数据收敛到一行记录上，用唯一索引保证一天只签一次。",
+      "bullets": [
+        "签到表以 user_id + 签到日期做联合唯一索引，插入即签到，靠唯一冲突天然幂等，不需要额外判重。",
+        "连续天数不能靠 count 历史，而是在用户维度上存 last_sign_date 和 continuous_days，签到时同一事务里比对昨天则加一、否则重置为一，用行锁保证并发下不丢数。",
+        "日榜就是按当天的签到时间排序，直接查当天分区的记录按 sign_time 升序取前 N，配合 user_id、日期的联合索引避免全表扫。",
+        "在没有中间件的前提下，高频排行查询靠覆盖索引或按照日期预聚合一张榜单表来扛，写入时同步维护，避免每次实时排序。",
+        "跨天和并发用 MySQL 自身语义收口：日期取服务器当前日期保证一致，唯一索引和行锁处理重复提交，历史数据按日期分区或冷热分离控制单表体量。"
+      ],
+      "clarifying": "排行榜是按最早签到时间排，还是按连续签到天数排？这决定了排序字段怎么定。"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "硬约束": true,
+        "排行榜语义": true,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": true
+      },
+      "signal_count": 5,
+      "signal_total": 5,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "lottery_constraints",
+    "question": "给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么设计数据结构、表和接口",
+    "want": "design",
+    "run": 1,
+    "arm": "before",
+    "total_ms": 3056,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是限量大奖的抽奖/秒杀问题，核心是把「库存有限、每人限中一次、中奖率30%」三个约束用一次原子操作钉在一起。",
+      "bullets": [
+        "奖品表按 prize_id 记录总量100和剩余量，用带条件的原子扣减（update ... where remaining>0）保证不超发，扣减失败即未中奖。",
+        "中奖记录表以 user_id+prize_id 建唯一索引，中奖时插入；靠唯一键冲突保证同一个人不会重复中奖，这比先查再插安全。",
+        "抽奖接口先判断该用户是否已中过（或直接靠唯一键），再判断剩余库存，通过则落一条中奖记录，返回结果。",
+        "30%的概率是一个随机前置过滤，但要和库存判断一起在数据库事务里做，否则1000人同时到达会超发。",
+        "1000人量级可以串行化走DB事务；若并发更高，用Redis预扣库存+Lua保证原子，DB做最终落库和兜底。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "库存与概率": true,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "lottery_constraints",
+    "question": "给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么设计数据结构、表和接口",
+    "want": "design",
+    "run": 1,
+    "arm": "after",
+    "total_ms": 3084,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是高并发秒杀场景，核心是把「谁中奖」从请求时的即时判断改成一次性的预生成中奖名单加幂等落库，1000 人抢 100 个名额但中奖率 30%，也就是最多 300 个中奖名额，先把这个语义定死。",
+      "bullets": [
+        "活动表按 activity_id 配置总名额、单人上限和中奖概率，库存表按 activity_id 记录已发放数量，用条件更新把总量卡死在 300。",
+        "中奖判定用概率阈值加库存扣减：先按概率决定这次是否中奖，再用一条带 where 的条件更新扣减库存，更新行数为 1 才算真正中奖，为 0 直接返回未中，保证不会超发。",
+        "请求先做幂等：用 activity_id 加 user_id 作为唯一键写入参与记录表，重复提交直接返回已有结果，不重复抽奖也不重复占名额。",
+        "接口分两个：参与接口接收 activity_id 和 user_id，返回中奖或未中；结果查询接口按同一唯一键返回最终状态，前端以查询结果为准而不是以参与接口的返回为准。",
+        "瓶颈在库存行的热点更新，用数据库的条件更新保证强一致，中奖结果落库后再返回；若同步写库扛不住，可先写唯一键记录再异步发奖，但发奖必须按唯一键幂等。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "库存与概率": true,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "lottery_constraints",
+    "question": "给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么设计数据结构、表和接口",
+    "want": "design",
+    "run": 2,
+    "arm": "before",
+    "total_ms": 2892,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是限定库存加概率判定的抽奖建模，核心是把中奖判定放在数据库层的条件更新里，保证不超发。",
+      "bullets": [
+        "奖池表按奖品行记录 total、issued 和 version，用 where issued < total 的条件更新扣减，靠行锁或乐观锁保证不超发。",
+        "抽奖记录表按 user_id 加奖品或活动维度的唯一索引落库，用户一次中奖只落一行，重复请求直接冲突返回已中奖。",
+        "抽奖接口先校验用户在名单内且未中过，再以 30% 概率判定，判定通过才走扣减库存，用本地事务把记录和扣减绑在一起。",
+        "概率判定放在应用层生成随机数，但结果要落库可审计；若要求精确 30%，就用预生成的奖券或幂等的结果表而不是纯随机。",
+        "用 Redis 做前置限流和已中奖用户缓存，拦截重复请求，库存以数据库为准，缓存只做削峰不做判定依据。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "库存与概率": true,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "lottery_constraints",
+    "question": "给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么设计数据结构、表和接口",
+    "want": "design",
+    "run": 2,
+    "arm": "after",
+    "total_ms": 2466,
+    "parsed": {
+      "kind": "design",
+      "answer": "这本质是限量库存加概率判定的秒杀，核心是让概率判定和扣减原子化，不能超发也不能被同一人重复中奖。",
+      "bullets": [
+        "奖项表按 prize_id 存总量 100 和剩余量，用条件更新 remaining > 0 做原子扣减，防止并发超发",
+        "中奖资格用 Redis 原子计数器或 Lua 脚本固化每轮概率结果，避免同一用户在并发重试下重复命中",
+        "用户与奖项的绑定关系持久化到 MySQL 唯一索引 user_id+prize_id，中奖后异步落库，接口幂等返回同一结果",
+        "接口分为概率判定和领奖两步：先扣库存再写中奖记录，失败则回滚库存，保证最终一致",
+        "库存耗尽时快速失败返回未中奖，避免无谓的概率计算和数据库压力"
+      ],
+      "clarifying": "每个用户是只能参与一次，还是可以多次参与？30% 是指单次参与的中奖概率，还是中奖者中 30% 能拿到奖？"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "库存与概率": true,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "lottery_constraints",
+    "question": "给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么设计数据结构、表和接口",
+    "want": "design",
+    "run": 3,
+    "arm": "before",
+    "total_ms": 2544,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是限时限量的抽奖场景，核心是把「名额」当成有状态的库存来管，难点在于不能让实际中奖人数超过 100。",
+      "bullets": [
+        "奖品表用 prize_id 做主键，带 total_stock 和 remaining_stock，库存放在数据库行上做扣减的依据。",
+        "抽奖记录表按 user_id + prize_id 建唯一索引，保证同一个人无论怎么点都只中一次。",
+        "接口是 POST /lottery/draw，先按 30% 概率随机判定这次是否中奖，没中就记一次未中返回，中了再往下走。",
+        "中奖落库用带条件的原子更新 UPDATE prize SET remaining_stock = remaining_stock - 1 WHERE prize_id = ? AND remaining_stock > 0，受影响行数为 0 就说明奖品已经发完，返回未中。",
+        "抽奖记录先落库再去更新库存，或者放在同一个事务里，避免记录成功但库存没扣导致超发。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "库存与概率": true,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "lottery_constraints",
+    "question": "给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么设计数据结构、表和接口",
+    "want": "design",
+    "run": 3,
+    "arm": "after",
+    "total_ms": 3258,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是秒杀场景的抽签发奖，核心难点是把「每人 30% 独立概率」这把尺子收敛成「全场恰好 100 个奖品」这个总量，因此需要一个发放状态机来保证不超发、不重复发。",
+      "bullets": [
+        "奖品表 prize 每行一个奖品，主键 prize_id，用 status（0 未发出 / 1 已发出）做条件更新充当发放状态机，每发一个就扣一次库存并置位，扣到 0 或更新影响行数为 0 就停止，天然防超发。",
+        "中奖表 award_record（user_id 唯一，prize_id，create_time），靠 user_id 唯一索引保证同一用户重复提交只落一条、不重复中奖；抢完 100 个后剩余名额直接落空。",
+        "接口设计：POST /draw 只做「查有没有中过 -> 判定中奖 -> 条件更新奖品表 + 插记录」，返回中奖结果；所有写操作在一个事务里，先扣奖品再写记录。",
+        "概率过滤放在进库之前：请求先做 30% 漏斗（可本地随机或 Redis 计数），只有约 300 人会真正去抢 100 个奖品，把数据库压力削到三成；剩余约 200 人因库存耗尽而失败，这正好是实现总量约束的代价。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "库存与概率": true,
+        "并发幂等": true,
+        "关键链路": true,
+        "取舍瓶颈": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "gacha_state",
+    "question": "九宫格周围8个奖品稀有概率不同，每个用户每抽一次幸运值都会提高，这个系统怎么设计",
+    "want": "design",
+    "run": 1,
+    "arm": "before",
+    "total_ms": 2591,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是一个带保底机制的抽奖系统，核心是把概率、保底计数、奖品库存三部分分开建模，抽奖时按权重随机再叠加保底规则。",
+      "bullets": [
+        "奖品配置表：每个格子记录基础权重、库存、是否可抽，权重决定稀有度，库存为 0 直接跳过。",
+        "用户状态表：按 user_id 记录已抽次数（幸运值）和距上次大奖的次数，用 Redis 原子自增保证并发安全。",
+        "保底规则：幸运值达到阈值时动态调整权重或直接锁定稀有格，命中大奖后计数器重置。",
+        "抽奖流程：先定奖再扣库存，用条件更新防超卖，扣减失败则重抽或降级到普通奖。",
+        "并发与幂等：请求带唯一 request_id 去重，扣库存和写记录放同一事务或 Lua 脚本保证原子。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "动态概率": true,
+        "状态生命周期": true,
+        "持久状态": true,
+        "关键链路": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "gacha_state",
+    "question": "九宫格周围8个奖品稀有概率不同，每个用户每抽一次幸运值都会提高，这个系统怎么设计",
+    "want": "design",
+    "run": 1,
+    "arm": "after",
+    "total_ms": 2791,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是一个加权抽奖加保底的问题，本质是按权重随机选奖、并用随次数上升的幸运值动态调整权重，核心挑战是既让概率按预期收敛，又保证并发下不超发、不重复扣次数。",
+      "bullets": [
+        "概率模型：九个格子各配一个基础权重，命中概率等于单项权重除以总权重；稀有奖权重远低于普通奖。",
+        "幸运值机制：用户每抽一次幸运值加一，稀有奖的权重按幸运值加成、普通奖权重随之稀释；抽中稀有奖后幸运值清零，累积值持久化。",
+        "抽奖流程：进入时先读用户当前幸运值，按当前权重算出九个格子的概率区间，生成一次随机数定位中奖格，再写回幸运值和扣减次数。",
+        "持久化与并发：用户次数、幸运值、中奖记录存数据库并以用户ID为主键；扣次数用带条件的更新，防重复扣减和并发超发。",
+        "概率可控与风控：配置走后台热更新，配好单奖上限和总预算；对同一用户的短时间高频请求做频率限制，防刷奖。"
+      ],
+      "clarifying": "幸运值的加成规则是固定的每抽递增，还是需要按稀有度分级递增？另外抽中普通奖是否重置幸运值？"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "动态概率": true,
+        "状态生命周期": true,
+        "持久状态": true,
+        "关键链路": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "gacha_state",
+    "question": "九宫格周围8个奖品稀有概率不同，每个用户每抽一次幸运值都会提高，这个系统怎么设计",
+    "want": "design",
+    "run": 2,
+    "arm": "before",
+    "total_ms": 3193,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是带保底权重的抽奖系统，核心是把单次概率拆成基础权重加用户幸运值加成，再把幸运值持久化到缓存里。",
+      "bullets": [
+        "奖品配置用权重表(prize_id、基础权重、稀有度、每抽幸运值增量)，每格一个条目共8条，概率=权重/总权重。",
+        "用户幸运值存 Redis，key 用 user_id + 活动 id，每抽一次累加该奖品配置的增量；抽中稀有奖品后按配置清零或减固定值。",
+        "抽奖流程：读缓存拿幸运值，加权随机选格，返回结果并异步落库(抽奖流水表记录 user_id、奖品、当时概率快照)。",
+        "幸运值要设上限，超过阈值把权重推向稀有奖品但保留基础下限，防止概率收敛到确定。",
+        "扣减次数用 Redis 原子操作(如 Lua 脚本)保证并发下不会超发，流水表只写不更新。"
+      ],
+      "clarifying": "幸运值加成是只影响稀有奖品权重，还是全部8格权重同时调整？清零条件是抽中即清还是累积到阈值才触发？"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "动态概率": true,
+        "状态生命周期": true,
+        "持久状态": true,
+        "关键链路": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "gacha_state",
+    "question": "九宫格周围8个奖品稀有概率不同，每个用户每抽一次幸运值都会提高，这个系统怎么设计",
+    "want": "design",
+    "run": 2,
+    "arm": "after",
+    "total_ms": 3436,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是带保底的抽奖系统，核心难点是让幸运值在多次抽奖间累计并驱动稀有奖品的出现概率，同时保证高并发下不超发、不丢状态。",
+      "bullets": [
+        "幸运值按用户维度存 Redis 哈希，抽一次加固定步长，到上限封顶；抽中稀有奖品后按规则清零或阶梯式回落，规则要写成配置而不是硬编码。",
+        "把幸运值映射成概率权重表，幸运值越高稀有格子权重越大；先算权重区间，再用带种子的随机数落点确定中哪个格子，落点结果决定命中哪个奖品。",
+        "一次抽奖是一个原子操作：Lua 脚本在 Redis 里同时做幸运值加一、按权重抽结果、写抽奖流水并返回结果，避免并发下同一份幸运值被读脏或重复消费。",
+        "库存放在 Redis 做预扣减，扣减失败直接返回未中奖或降级到普通奖品，异步把流水落库到 MySQL 做对账和概率审计。",
+        "关键约束是概率和幸运值不能只是前端展示：所有随机数、权重计算和扣减必须全部在服务端完成，客户端只拿到结果，防止刷奖和概率被反推。"
+      ],
+      "clarifying": "幸运值达到上限后是必然中稀有奖品，还是只提高权重；稀有奖品的库存是全局共享还是每个用户独立一份？"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "动态概率": true,
+        "状态生命周期": true,
+        "持久状态": true,
+        "关键链路": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "gacha_state",
+    "question": "九宫格周围8个奖品稀有概率不同，每个用户每抽一次幸运值都会提高，这个系统怎么设计",
+    "want": "design",
+    "run": 3,
+    "arm": "before",
+    "total_ms": 2708,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是加权抽奖加保底机制，核心是把稀有度和幸运值统一成一次概率计算并落库。",
+      "bullets": [
+        "奖池表按奖品ID记录基础权重、稀有度、库存，权重决定单次命中概率。",
+        "用户表记录当前幸运值和已抽次数，每次抽奖后幸运值按规则递增，命中稀有奖品后清零或回落，保证状态跨请求可恢复。",
+        "抽取时用随机数按基础权重加幸运值加权后做轮盘选择，结果和幸运值变更在同一事务里落库，防止并发超发。",
+        "设置保底计数，连续未中稀有奖品达到阈值时强制命中，覆盖纯概率的极端情况。",
+        "高并发下用Redis缓存奖池和用户幸运值，异步刷库，库存用原子操作扣减。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "动态概率": true,
+        "状态生命周期": true,
+        "持久状态": true,
+        "关键链路": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "gacha_state",
+    "question": "九宫格周围8个奖品稀有概率不同，每个用户每抽一次幸运值都会提高，这个系统怎么设计",
+    "want": "design",
+    "run": 3,
+    "arm": "after",
+    "total_ms": 2624,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是一个带保底的概率抽奖，核心难点是幸运值作为跨请求的持久状态如何随抽奖推进、并在中奖后重置。",
+      "bullets": [
+        "定义概率模型：每个格子有基础概率表，实际概率 = 基础概率按幸运值加成后的归一化权重，幸运值越高稀有格权重越大。",
+        "持久化用户状态：抽奖记录与用户幸运值落在数据库，按 user_id 唯一标识，服务无状态可水平扩展。",
+        "抽奖流程：开事务先查幸运值算概率、随机选中格子、写抽奖记录、幸运值加一或中奖后归零，全部提交后返回。",
+        "用乐观锁或行锁串行化同一用户并发请求，防止并发下重复扣次数和幸运值乱加。",
+        "中奖后幸运值重置，并给幸运值设上限防止概率过早拉满。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "动态概率": true,
+        "状态生命周期": true,
+        "持久状态": true,
+        "关键链路": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "payment_callbacks",
+    "question": "第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制",
+    "want": "design",
+    "run": 1,
+    "arm": "before",
+    "total_ms": 2344,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是支付回调的幂等处理问题，核心是把回调当成至少一次投递的异步事件，用状态机加对账来兜底。",
+      "bullets": [
+        "订单表加状态机字段，合法流转只有待支付→支付成功→已发货，重复回调命中终态直接返回成功，不重复改状态。",
+        "建支付流水表，用支付平台的交易号做唯一索引，回调先插流水，插入冲突说明已处理过，天然幂等。",
+        "回调处理放在事务里，更新订单和写流水一起提交，避免状态改了流水没落库。",
+        "乱序靠状态单调性解决，晚到的旧状态回调不覆盖新状态，只记流水和日志。",
+        "丢失靠主动补偿，定时任务扫长时间待支付订单，反向调支付平台查询接口和下载对账单，以平台侧结果为准修正订单。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "挑战定位": true,
+        "幂等状态机": true,
+        "补偿链路": true,
+        "取舍边界": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "payment_callbacks",
+    "question": "第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制",
+    "want": "design",
+    "run": 1,
+    "arm": "after",
+    "total_ms": 2925,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是支付回调的幂等处理加定时对账补偿，核心是把每次回调变成可去重的状态推进，而不是直接改余额。",
+      "bullets": [
+        "回调先落一张回调流水表，以渠道加渠道订单号做唯一索引，插入冲突就说明是重复通知，直接返回成功不再处理。",
+        "订单表用状态机加乐观锁，只允许待支付到已支付这样的合法流转，更新时带上原状态做条件更新，影响行数为零说明已经处理过。",
+        "回调里只改本地订单状态并记录渠道流水号，把发货、加积分这类后续动作发到消息队列异步做，保证接口快速返回。",
+        "乱序和丢失靠定时对账补偿，按时间扫超过阈值还处于待支付的订单，主动去渠道查单，以渠道查询结果为准回写状态。",
+        "渠道查单超过一定次数仍无结果或明确失败，就把订单置为关闭并释放库存，整个补偿要幂等，重复跑不会重复扣减。"
+      ],
+      "clarifying": "对账时以渠道的查询接口为准，还是也接受渠道的主动补发通知？"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "挑战定位": true,
+        "幂等状态机": true,
+        "补偿链路": true,
+        "取舍边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "payment_callbacks",
+    "question": "第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制",
+    "want": "design",
+    "run": 2,
+    "arm": "before",
+    "total_ms": 2653,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是幂等消费加最终一致的补偿问题，核心是把回调当作可重放的通知、订单状态只允许按状态机单调推进。",
+      "bullets": [
+        "回调先落表再处理：用支付流水号做主键唯一约束做去重，重复通知直接返回成功，不重复改单。",
+        "订单表存状态机（待支付/已支付/已关闭）和版本号，更新用条件更新或乐观锁，只允许向前跃迁，乱序的旧通知丢掉。",
+        "回调只做落库和触发，真正的状态推进走内部消息或定时任务，接口快速返回成功，避免渠道超时重试。",
+        "补偿用本地消息表加定时对账：按时间窗调渠道查单接口，把本地缺失或状态不一致的单补齐，超时未支付的关单。",
+        "钱和状态分离，退款、补单这类不可逆操作单独记录和人工兜底，避免自动补偿造成重复出款。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "挑战定位": true,
+        "幂等状态机": true,
+        "补偿链路": true,
+        "取舍边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "payment_callbacks",
+    "question": "第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制",
+    "want": "design",
+    "run": 2,
+    "arm": "after",
+    "total_ms": 3757,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是支付回调的幂等消费加对账补偿问题，核心是把回调当作可重复、可乱序的消息，订单状态只允许按支付渠道的单调序推进，缺失的靠主动查询补齐。",
+      "bullets": [
+        "回调先落库去重：用渠道流水号(transaction_id)加唯一索引建支付流水表，重复回调插入冲突直接返回成功，保证同一笔支付只被处理一次；不同订单号也要按流水号幂等，防止渠道重复发或我们重试。",
+        "订单状态用版本号或状态机做条件更新，只允许待支付->支付中->已支付这种单向推进，已支付、已关闭等终态回回调直接忽略，从而把乱序到达的回调变成无副作用的操作。",
+        "对账补偿用定时任务按订单维度主动查单：对处于支付中或待支付且超过一定时间(比如15分钟)的订单调用渠道查询接口，查到成功就补更新，查到失败或不存在就关闭订单，以渠道最终状态为准，不依赖回调是否到达。",
+        "回调丢失和补偿之间靠本地消息表或任务表衔接：回调成功更新订单后要发通知/发货，就用本地消息表保证同一事务，失败由重试任务扫表重发，避免订单已支付但下游没收到。",
+        "所有更新都要可观测：记录每次回调的原始报文、渠道流水号和订单状态变更历史，对账任务发现的不一致和补偿结果落表并告警，方便人工核对。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "挑战定位": true,
+        "幂等状态机": true,
+        "补偿链路": true,
+        "取舍边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "payment_callbacks",
+    "question": "第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制",
+    "want": "design",
+    "run": 3,
+    "arm": "before",
+    "total_ms": 2652,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是支付回调的幂等处理加对账补偿，核心是把回调当成不可靠通知，订单状态只由服务端自己推进。",
+      "bullets": [
+        "维护一张支付流水表，以渠道流水号加唯一索引做幂等键，重复回调插入冲突就直接返回成功，不再动订单。",
+        "订单状态按待支付到支付中到已支付单向流转，更新时带原状态做条件更新，防止旧回调把已支付改回中间态。",
+        "乱序用状态机挡住：迟到的成功回调只做补充记录，不回退已终态订单，金额和商户号要跟订单核对一致。",
+        "回调只做校验和落库，响应立刻返回，后续发货、加积分等业务动作走消息队列异步消费。",
+        "兜底靠定时对账：拉渠道对账文件跟本地流水比对，长款补单、短款挂异常人工处理，超时未支付的订单主动关单。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "挑战定位": true,
+        "幂等状态机": true,
+        "补偿链路": true,
+        "取舍边界": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "payment_callbacks",
+    "question": "第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制",
+    "want": "design",
+    "run": 3,
+    "arm": "after",
+    "total_ms": 3034,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是支付回调的幂等处理加最终一致性对账，核心是把回调当作可重放的通知而不是一次性的命令。",
+      "bullets": [
+        "回调入口只做校验和落库：验签后把原始报文按渠道流水号去重写入回调流水表，重复或乱序到达只留一条，立刻返回成功避免渠道重推。",
+        "订单状态更新用状态机加条件更新，只允许待支付转已支付这类合法迁移，已经终态的订单再次收到回调直接忽略，不覆盖已有状态。",
+        "乱序靠渠道流水号或订单维度加版本号判定，晚到的旧回调因为版本落后被丢弃，不依赖到达顺序。",
+        "丢失由本地对账任务兜底：定时拉取渠道对账文件或主动查询，比对流水表和订单表，发现渠道已成功而本地未更新就补一次状态迁移，补单走和回调同一套幂等入口。",
+        "所有状态变更记流水和变更时间，超时未支付的订单由定时任务关闭，补偿操作也要落日志便于排查和防重。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "挑战定位": true,
+        "幂等状态机": true,
+        "补偿链路": true,
+        "取舍边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "chunk_upload",
+    "question": "设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试",
+    "want": "design",
+    "run": 1,
+    "arm": "before",
+    "total_ms": 2623,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是分片上传加合并的经典问题，核心是把一次上传建模成可恢复的会话，围绕文件指纹做秒传和断点续传。",
+      "bullets": [
+        "上传前先算文件摘要，客户端用抽样哈希快速算出 file_hash；服务端拿它查已存在的文件记录，命中就直接返回文件地址，这就是秒传。",
+        "会话表按 upload_id 记录 file_hash、总大小、分片大小、状态和过期时间；分片记录表按 upload_id 加 chunk_index 记录每个分片的 ETag 和状态，唯一键保证重复上传同一分片是幂等的。",
+        "接口分成四步：初始化会话返回已上传分片列表、逐个上传分片、完成合并、查询进度；断点续传就是客户端重新初始化时拿回已完成分片列表，只补差的部分。",
+        "分片内容直接落对象存储，数据库只存元数据和状态；合并时服务端按序号拉取分片流式拼接，完成后校验整体 MD5 再落正式对象。",
+        "并发和重试用条件更新收口：分片上传和合并都用状态字段做 CAS 防止重复；失败会话由定时任务按过期时间清理，同时释放对象存储的临时分片。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "会话模型": true,
+        "三项约束": true,
+        "关键链路": true,
+        "失败边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "chunk_upload",
+    "question": "设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试",
+    "want": "design",
+    "run": 1,
+    "arm": "after",
+    "total_ms": 2814,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是分片上传加最终合并的问题，核心是把一次上传建模成可恢复的会话，用文件摘要做秒传判定的键。",
+      "bullets": [
+        "上传前先算文件摘要，用摘要查存储里是否已有完整对象，命中就直接返回文件 URL，这就是秒传，前端按分片大小在本地切好分片。",
+        "创建上传会话时记录 upload_id、文件摘要、分片大小、总分片数和已完成分片位图，状态落库，按 upload_id 定位整个会话。",
+        "分片接口按 upload_id 加分片号幂等写入，同一分片重复上传覆盖同一份数据，服务端返回已收到的分片列表供断点续传时对比续传。",
+        "全部分片到齐后带摘要校验合并成完整对象再返回可访问 URL，重试由客户端对失败分片重传，服务端给分片配过期时间，超时未完成的会话和残留分片定期清理。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "会话模型": true,
+        "三项约束": true,
+        "关键链路": true,
+        "失败边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "chunk_upload",
+    "question": "设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试",
+    "want": "design",
+    "run": 2,
+    "arm": "before",
+    "total_ms": 2459,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是分片上传加内容寻址的问题，核心是把一次上传建模成可恢复的会话，并用文件摘要做去重。",
+      "bullets": [
+        "客户端先算文件摘要，调秒传检查接口；服务端命中已有完整文件就直接返回，跳过上传。",
+        "未命中的话创建上传会话，upload_id 关联文件摘要、分片大小、总分片数和过期时间，存数据库。",
+        "分片接口按 upload_id 加分片序号幂等写入，服务端记录已落盘分片位图，重试同一分片不重复写。",
+        "分片内容放对象存储，数据库只存元数据和状态，不把大文件塞进数据库。",
+        "合并时校验全部分片齐全且摘要一致，用状态条件更新防止重复合并，失败会话由过期清理任务回收。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "会话模型": true,
+        "三项约束": true,
+        "关键链路": true,
+        "失败边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "chunk_upload",
+    "question": "设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试",
+    "want": "design",
+    "run": 2,
+    "arm": "after",
+    "total_ms": 2961,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是分片上传加合并，本质是把一次上传建模成可恢复、可校验的会话；难点在分片状态和秒传的判定口径。",
+      "bullets": [
+        "创建会话时算整个文件的哈希（可以先抽样或用首尾分片加总大小），拿它查历史记录，命中就直接秒传返回，不传任何分片。",
+        "会话按 upload_id 记录文件哈希、分片大小、总分片数、已完成分片位图、状态和过期时间，上传接口按 upload_id 加分片序号幂等写入，重试时同一分片重复传不产生重复数据。",
+        "分片内容先落到对象存储，数据库只存元数据和分片状态，列表接口把已完成分片返回给客户端，客户端只补齐缺的那几片。",
+        "全部分片到齐后做一次合并，用位图加状态条件更新来保证只有一个请求能把会话从上传中推到合并完成，避免并发重复合并。",
+        "每个分片带校验值，写入前校验、失败允许重传，长时间未完成的会话由过期任务清理掉已落的分片。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "会话模型": true,
+        "三项约束": true,
+        "关键链路": true,
+        "失败边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "chunk_upload",
+    "question": "设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试",
+    "want": "design",
+    "run": 3,
+    "arm": "before",
+    "total_ms": 2141,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是分片上传加会话恢复，核心是把一次上传建模成由文件摘要唯一标识的可恢复会话。",
+      "bullets": [
+        "秒传先用文件摘要查上传记录表，命中且已合并则直接返回访问地址，不传任何分片。",
+        "会话表按 upload_id 记录文件摘要、分片大小、已完成分片位图、状态和过期时间，分片内容落对象存储，库只存元数据。",
+        "接口分创建会话、下发已传分片列表、幂等上传单个分片、完成合并四步，重复上传同一分片号覆盖写，天然可重试。",
+        "分片带 md5 校验，合并前逐片校验，合并时用状态条件更新防止并发重复合并，客户端只需查会话拿缺失分片继续传。",
+        "会话设过期时间，由定时任务清理未完成分片，避免对象存储里堆积孤儿数据。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "会话模型": true,
+        "三项约束": true,
+        "关键链路": true,
+        "失败边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "chunk_upload",
+    "question": "设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试",
+    "want": "design",
+    "run": 3,
+    "arm": "after",
+    "total_ms": 2920,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是分片上传加最终合并的典型场景，核心是把一次上传建模成一个可恢复、可幂等的会话，秒传和断点续传都靠在创建会话时校验文件指纹来实现。",
+      "bullets": [
+        "客户端先算文件内容哈希作为唯一标识，创建会话时服务端查这个哈希是否已有完整文件，命中就直接返回可访问地址，这就是秒传；未命中才返回 upload_id 和分片大小。",
+        "会话表以 upload_id 为主键，记录文件哈希、总分片数、已完成分片列表、当前状态和过期时间，分片成功一次就更新一次，重试时据此只补缺失的分片。",
+        "接口拆成创建会话、上传单个分片、查询进度、完成合并四步，分片上传要幂等——同一 upload_id 加同一分片序号重复提交直接覆盖，不产生重复数据。",
+        "分片内容先落对象存储，数据库只存元数据和分片清单，合并时按序号拼接成完整文件，合并成功后回填文件地址并把会话标记完成。",
+        "完成合并用状态条件更新防止并发重复触发，未完成的会话由定时任务按过期时间清理，避免分片长期占存储。"
+      ],
+      "clarifying": "文件指纹是用内容哈希还是抽样哈希，这决定了客户端算秒传标识的开销。"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "会话模型": true,
+        "三项约束": true,
+        "关键链路": true,
+        "失败边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "local_lru",
+    "question": "设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求写代码",
+    "want": "design",
+    "run": 1,
+    "arm": "before",
+    "total_ms": 2952,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是带 TTL 的并发 LRU 缓存，核心是把淘汰顺序、过期判断和并发控制拆成三个互不干扰的机制。",
+      "bullets": [
+        "底层用哈希表加双向链表：哈希表做 O(1) 定位，链表头放最近使用、尾部放最久未用，命中后把节点摘到头部。",
+        "过期用惰性删除加后台清理两条路：get 时判断 expireAt 过期就直接删并返回未命中，同时有一个低优先级线程定期从尾部扫少量节点回收，避免死键长期占容量。",
+        "并发用分段锁，按 key 哈希把缓存分成多段，每段一把锁，get 在锁内同时完成读值和移动链表节点，保证读不是脏读。",
+        "淘汰和过期都要在锁内做二次校验：拿到锁后重新确认节点还在且没过期，防止两个线程同时判断失效重复删除。",
+        "容量用 size 计数而不是链表长度，插入超限从尾部淘汰，并说明命中率与锁粒度之间的取舍。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "核心结构": true,
+        "过期机制": true,
+        "并发策略": true,
+        "取舍边界": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "local_lru",
+    "question": "设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求写代码",
+    "want": "design",
+    "run": 1,
+    "arm": "after",
+    "total_ms": 2413,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是带 TTL 的线程安全 LRU，核心是把淘汰顺序和过期判断放在同一把锁内做成 O(1) 操作。",
+      "bullets": [
+        "数据结构用哈希表加双向链表：哈希表定位节点做到 O(1) 查找，链表头是最近使用、尾是最久未用，访问时把节点移到头部。",
+        "过期时间存在节点上，采用惰性删除为主：get 时如果已过期就当未命中并摘除节点；淘汰时先从尾部检查过期节点清掉，不够再按 LRU 淘汰。",
+        "并发用一把可重入锁保护整个 map 和链表，保证 size 和顺序一致；量大的场景按 key 分片成多个独立缓存，降低锁竞争。",
+        "get 需要写操作（移动链表头），所以不能用读写锁只加读锁；写回时先改链表再改 map，防止出现孤儿节点。",
+        "容量上限和 TTL 是硬边界，命中率靠 LRU 顺序和惰性过期共同保证，不需要后台线程也能控制内存。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "核心结构": true,
+        "过期机制": true,
+        "并发策略": true,
+        "取舍边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "local_lru",
+    "question": "设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求写代码",
+    "want": "design",
+    "run": 2,
+    "arm": "before",
+    "total_ms": 3216,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是 LRU 加 TTL 加并发访问的组合问题，核心是哈希表加双向链表做 O(1) 淘汰，再用分段锁或读写锁保证并发安全。",
+      "bullets": [
+        "底层用 HashMap 存 key 到链表节点的映射，双向链表按访问顺序排列，访问时把节点移到头部，淘汰时从尾部删，保证 get 和 put 都是 O(1)。",
+        "每个节点带一个过期时间戳，get 时顺手判断是否过期，过期就删掉返回空；另外起一个后台线程定期清理过期节点，避免冷数据一直占着内存。",
+        "并发用分段锁，把缓存按 key 哈希分成多个段，每段一把锁，不同段的读写互不阻塞；热点 key 集中在同一段时性能会下降，段数一般取 CPU 核数的几倍。",
+        "也可以直接用 ConcurrentHashMap 加一把全局锁维护链表顺序，实现简单但写入会串行化，适合读多写少的场景，高并发写入下分段锁优势更明显。",
+        "容量上限固定，淘汰和过期是两个独立的删除路径，都要更新链表中位置并保证不重复删除同一个节点，避免并发下出现悬空引用。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "核心结构": true,
+        "过期机制": true,
+        "并发策略": true,
+        "取舍边界": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "local_lru",
+    "question": "设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求写代码",
+    "want": "design",
+    "run": 2,
+    "arm": "after",
+    "total_ms": 2518,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是带 TTL 的线程安全 LRU，核心是哈希表定位、双向链表维护顺序，读写都要在锁内完成。",
+      "bullets": [
+        "用 HashMap 存 key 到节点的映射，双向链表头放最近使用、尾放最久未用，get 和 put 都先把节点移到头部。",
+        "每个节点带 expireAt 时间戳，读的时候惰性判断，已过期就当不存在并删除，插入新 key 时也顺手清理一次尾部。",
+        "并发用一把 ReentrantLock 包住所有操作，保证链表指针和 map 的修改是原子的；读多写多时再考虑分段锁。",
+        "容量到上限时从尾部淘汰，但如果尾节点已过期直接扔，不用再去碰 map。",
+        "淘汰或删除后要把 map 和链表同时更新，避免出现 map 里有但链表里找不到的脏数据。"
+      ],
+      "clarifying": "过期是希望惰性删除就够，还是需要后台线程主动清理？"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "核心结构": true,
+        "过期机制": true,
+        "并发策略": true,
+        "取舍边界": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "local_lru",
+    "question": "设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求写代码",
+    "want": "design",
+    "run": 3,
+    "arm": "before",
+    "total_ms": 2515,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是带 TTL 的并发 LRU 缓存，核心是哈希表加双向链表保证 O(1) 访问，再叠一层分段锁和惰性过期。",
+      "bullets": [
+        "数据结构用 HashMap + 双向链表，get 命中后把节点移到表头，put 超容量就淘汰表尾，两者都是 O(1)。",
+        "每个节点存 expireAt 时间戳，get 时先判断是否过期，过期就删除并返回 miss，属于惰性删除，不额外起清理线程。",
+        "并发控制按 key 哈希分段加 ReentrantLock，各段独立淘汰，读写只在段内互斥，避免全局锁成为瓶颈。",
+        "容量控制按段配额分配，单段满了先在本段内做 LRU 淘汰，保证整体内存占用有上界。",
+        "对并发 get 的写回操作可以只在访问计数上做轻量更新，避免每次读都抢锁。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "核心结构": true,
+        "过期机制": true,
+        "并发策略": true,
+        "取舍边界": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "local_lru",
+    "question": "设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求写代码",
+    "want": "design",
+    "run": 3,
+    "arm": "after",
+    "total_ms": 2907,
+    "parsed": {
+      "kind": "design",
+      "answer": "这本质上是线程安全的 LRU，在哈希表加双向链表的基础上再叠一层 TTL 过期，核心难点是并发下如何把读写锁的粒度压到最低。",
+      "bullets": [
+        "底层用 HashMap 存 key 到链表节点的映射，双向链表头尾分别是最近和最久未使用，get 和 put 命中后把节点移到头部，超容量就淘汰尾部，两者都是 O(1)。",
+        "TTL 单独存一份 expireAt 在节点里，惰性删除为主：get 时先看是否过期，过期直接删掉当未命中，这样不用后台扫描。",
+        "容量和 TTL 都需要兜底清理，可以在 put 时顺带从链表尾往前扫一小批已过期节点，保证不活跃的过期数据最终也能被回收。",
+        "并发用分段锁而不是一把大锁：按 key 哈希分成固定数量的 segment，每个 segment 内部维护自己的 HashMap 加链表和自己的锁，不同段互不阻塞。",
+        "同一段内用 ReentrantLock 或 synchronized 保证链表指针操作的原子性，get 命中后移动节点必须在锁内完成，否则并发下链表会断链或出现环。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "核心结构": true,
+        "过期机制": true,
+        "并发策略": true,
+        "取舍边界": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "virtual_list",
+    "question": "前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件",
+    "want": "design",
+    "run": 1,
+    "arm": "before",
+    "total_ms": 2852,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是长列表的虚拟滚动问题，核心是只渲染可视区内再加上下缓冲的那几十条，滚动时按每项的测量高度动态换出换入。",
+      "bullets": [
+        "用累计高度数组加二分查找，由 scrollTop 反推可视区起始 index，这是不定高列表的关键，不能用简单的 index 乘固定行高。",
+        "首次渲染时逐项测量真实高度并回填，测过的项做高度缓存，滚动回跳时直接复用，避免重复测量引起跳动。",
+        "可视区上下各留一屏左右的 overscan 缓冲，滚动用 rAF 节流，超出的 DOM 节点回收复用，把常驻节点数压在一百以内。",
+        "异步数据、图片加载或展开折叠导致高度变化时，重算该项之后的累计偏移，并用一个锚定项保证当前可视内容不跳。",
+        "10 万条数据只在内存里存轻量摘要，不一次性建 DOM，接口按需分页或流式补数据。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "问题归类": true,
+        "不定高": true,
+        "定位链路": true,
+        "取舍边界": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "virtual_list",
+    "question": "前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件",
+    "want": "design",
+    "run": 1,
+    "arm": "after",
+    "total_ms": 2787,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是虚拟滚动，核心是把渲染量从总条数解耦成视口内可见的条数，难点在高度不固定导致的位置计算。",
+      "bullets": [
+        "位置计算改用前缀和：维护每条已测量高度和累计偏移的数组，二分查 startIndex，未测量的项先用预估高度占位。",
+        "渲染窗口按 startIndex 加 overscan 缓冲算出来，只挂载这几条 DOM，滚动时按 scrollTop 反查并增量替换。",
+        "高度测量用 ResizeObserver 在挂载后回写，测出真实值后更新前缀和并做滚动位置锚定，避免上方项变高导致内容跳动。",
+        "滚动事件用 rAF 节流，连续滚动中复用 DOM 节点池，减少创建销毁开销，滚动容器用一个撑高的占位层维持滚动条。",
+        "未测量的偏移只能估，长列表总高度会随滚动逐步收敛，必要时用后端返回的预估高度或分批测量初始化前缀和。"
+      ],
+      "clarifying": "每项高度是完全可以异步测量的吗，还是后端能返回一个预估高度？"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "问题归类": true,
+        "不定高": true,
+        "定位链路": true,
+        "取舍边界": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "virtual_list",
+    "question": "前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件",
+    "want": "design",
+    "run": 2,
+    "arm": "before",
+    "total_ms": 2132,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是虚拟长列表问题，核心是只渲染视口内的行，用偏移量映射而不是下标去定位。",
+      "bullets": [
+        "用累积高度表记录每行高度，通过二分查找把滚动位置映射到起始行下标，动态高度行渲染后用 ResizeObserver 回写并修正偏移。",
+        "可视区上下各渲染一个缓冲区，滚动时按需求增量渲染，避免全部重建。",
+        "用 transform 定位内容容器整体偏移，滚动事件合并到 rAF 里处理，避免每帧多次重排。",
+        "高度未测量的行先用预估高度占位，测量完成后只修正该行之后的累加偏移，防止视口跳动。",
+        "数据本身分页或分段持有，只对已测量区间的行维护高度缓存，避免十万条全量测量。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "问题归类": true,
+        "不定高": true,
+        "定位链路": true,
+        "取舍边界": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "virtual_list",
+    "question": "前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件",
+    "want": "design",
+    "run": 2,
+    "arm": "after",
+    "total_ms": 3101,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是虚拟滚动，核心是把渲染量从数据总量解耦成视口可见的行数，难点在于高度不固定时无法直接算出任意行的偏移量。",
+      "bullets": [
+        "维护一个位置索引数组，记录每一行的起始偏移和前 N 行的高度累加值，用它二分查找当前滚动位置对应的起始行。",
+        "只渲染视口内和上下各若干条缓冲区，缓冲区用于避免快速滚动时白屏，渲染节点数固定在几十个。",
+        "行渲染完成后测量真实高度，与估算值不一致才回写索引并修正后续偏移，估算值准的时候大部分行不触发重算。",
+        "未测量过的行用估算高度占位，估算值取已测量行的高度均值或业务约定值，控制滚动条跳动幅度。",
+        "滚动事件用 requestAnimationFrame 节流，只更新起止下标和偏移，避免每帧触发全量重排。"
+      ],
+      "clarifying": "每行高度是完全随机，还是同类内容高度基本一致、只有少数换行差异？这决定估算值该不该按类型分别维护。"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "问题归类": true,
+        "不定高": true,
+        "定位链路": true,
+        "取舍边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "virtual_list",
+    "question": "前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件",
+    "want": "design",
+    "run": 3,
+    "arm": "before",
+    "total_ms": 2490,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是长列表虚拟滚动问题，核心是只渲染可视区域的数据，用高度估算加动态修正来兜底不定高。",
+      "bullets": [
+        "维护前缀高度数组或二分查找结构，用 startIndex 加累计高度算出每个 item 的 offset，定位可见区间 O(log n)。",
+        "未测量过的 item 先给估算高度，渲染后用 ResizeObserver 或 ref 量出真实高度，回写缓存并触发重算。",
+        "通过 translateY 或容器 padding 撑出总高度，让滚动条和定位一致，item 用绝对定位按 offset 摆放。",
+        "用 overscan（上下各多渲染几条）减少快速滚动白屏，滚动事件做节流或用 IntersectionObserver 驱动重渲染。",
+        "高度变化会污染其后所有 offset，只重算受影响的区间，并把测量结果缓存，避免整表重排。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "问题归类": true,
+        "不定高": true,
+        "定位链路": true,
+        "取舍边界": true
+      },
+      "signal_count": 4,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "virtual_list",
+    "question": "前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件",
+    "want": "design",
+    "run": 3,
+    "arm": "after",
+    "total_ms": 2972,
+    "parsed": {
+      "kind": "design",
+      "answer": "这是长列表的虚拟滚动问题，核心难点是每项高度不定，意味着在没渲染之前我们不知道总高度和每个元素的位置。",
+      "bullets": [
+        "先在后台线程或首屏分批测量真实高度，把每条数据的高度缓存下来，建立一个前缀和的高度表，用它来算总高度和滚动位置的映射。",
+        "用高度表把滚动偏移量二分定位到可见区间，只渲染可见区加上下各一两屏的缓冲项。",
+        "高度未测量前用预估高度占位，测量完成后修正高度表并补偿滚动偏移，避免列表跳动。",
+        "高度变化用 ResizeObserver 监听，只更新受影响项之后的前缀和，增量维护而不是全量重算。",
+        "超过 DOM 承载上限时，可以把已经滚过的区域按块固定下来，只保留可视块附近的真实节点。"
+      ],
+      "clarifying": "列表是否允许滚动条总高度有小幅动态变化？如果要求滚动条完全稳定，就需要强制固定项高或提前完整测量。"
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {
+        "问题归类": true,
+        "不定高": true,
+        "定位链路": true,
+        "取舍边界": false
+      },
+      "signal_count": 3,
+      "signal_total": 4,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "coding_override",
+    "question": "设计一个 LRU 缓存，并用 Java 完整实现 get 和 put",
+    "want": "coding",
+    "run": 1,
+    "arm": "before",
+    "total_ms": 3492,
+    "parsed": {
+      "kind": "coding",
+      "answer": "用 HashMap 加双向链表：HashMap 做到 O(1) 查找，双向链表维护访问顺序，头部是最新、尾部是最旧，get 和 put 都是 O(1) 时间，空间 O(capacity)。\n```java\npublic class LRUCache {\n    // 双向链表节点\n    class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final int capacity;\n    private final Map<Integer, Node> map;\n    // 哨兵节点，避免处理头尾的 null 判断\n    private final Node head;\n    private final Node tail;\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        // 访问过就移动到链表头部\n        moveToHead(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            // key 已存在，更新值并提升为最近使用\n            node.value = value;\n            moveToHead(node);\n            return;\n        }\n        // 超出容量先淘汰尾部最久未使用的节点\n        if (map.size() == capacity) {\n            Node last = tail.prev;\n            removeNode(last);\n            map.remove(last.key);\n        }\n        Node newNode = new Node(key, value);\n        map.put(key, newNode);\n        addToHead(newNode);\n    }\n\n    // 把节点从原位置摘下来，插到头部\n    private void moveToHead(Node node) {\n        removeNode(node);\n        addToHead(node);\n    }\n\n    private void removeNode(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n\n    private void addToHead(Node node) {\n        node.next = head.next;\n        node.prev = head;\n        head.next.prev = node;\n        head.next = node;\n    }\n}\n```\n\n如果要求线程安全版本，可以用 `ConcurrentHashMap` 配合 `ReentrantLock` 包住链表操作，或者直接用 `LinkedHashMap` 重写 `removeEldestEntry` 加锁实现。",
+      "bullets": [],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "coding_override",
+    "question": "设计一个 LRU 缓存，并用 Java 完整实现 get 和 put",
+    "want": "coding",
+    "run": 1,
+    "arm": "after",
+    "total_ms": 3052,
+    "parsed": {
+      "kind": "coding",
+      "answer": "用哈希表加双向链表，哈希表保证 O(1) 定位节点，双向链表保证 O(1) 移动和淘汰尾节点，get 和 put 都是 O(1)，空间 O(capacity)。\n```java\nimport java.util.HashMap;\nimport java.util.Map;\n\npublic class LRUCache {\n\n    // 双向链表节点\n    private static class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final int capacity;\n    private final Map<Integer, Node> map;\n    // 哨兵节点，避免判空\n    private final Node head;\n    private final Node tail;\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        // 访问过就移到头部\n        moveToHead(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            // 已存在，更新值并移到头部\n            node.value = value;\n            moveToHead(node);\n            return;\n        }\n        // 容量满了先淘汰尾部最久未使用的节点\n        if (map.size() == capacity) {\n            Node lru = tail.prev;\n            removeNode(lru);\n            map.remove(lru.key);\n        }\n        Node newNode = new Node(key, value);\n        map.put(key, newNode);\n        addToHead(newNode);\n    }\n\n    // 把节点从链表中摘掉\n    private void removeNode(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n\n    // 把节点插到头部\n    private void addToHead(Node node) {\n        node.next = head.next;\n        node.prev = head;\n        head.next.prev = node;\n        head.next = node;\n    }\n\n    private void moveToHead(Node node) {\n        removeNode(node);\n        addToHead(node);\n    }\n}\n```",
+      "bullets": [],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "coding_override",
+    "question": "设计一个 LRU 缓存，并用 Java 完整实现 get 和 put",
+    "want": "coding",
+    "run": 2,
+    "arm": "before",
+    "total_ms": 3161,
+    "parsed": {
+      "kind": "coding",
+      "answer": "用哈希表加双向链表：哈希表定位节点 O(1)，链表维护访问顺序，头是最近使用、尾是最久未用，get 和 put 都是 O(1)，空间 O(capacity)。\n```java\nimport java.util.HashMap;\nimport java.util.Map;\n\nclass LRUCache {\n\n    // 双向链表节点\n    class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final Map<Integer, Node> map;\n    private final int capacity;\n    // 虚拟头尾节点，省掉边界判断\n    private final Node head;\n    private final Node tail;\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        // 访问过就移到头部\n        moveToHead(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            node.value = value;\n            moveToHead(node);\n            return;\n        }\n        // 容量满了先淘汰尾部节点\n        if (map.size() == capacity) {\n            Node last = tail.prev;\n            removeNode(last);\n            map.remove(last.key);\n        }\n        Node newNode = new Node(key, value);\n        map.put(key, newNode);\n        addToHead(newNode);\n    }\n\n    // 把节点摘下来插到头\n    private void moveToHead(Node node) {\n        removeNode(node);\n        addToHead(node);\n    }\n\n    private void removeNode(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n\n    private void addToHead(Node node) {\n        node.next = head.next;\n        node.prev = head;\n        head.next.prev = node;\n        head.next = node;\n    }\n}\n```",
+      "bullets": [],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "coding_override",
+    "question": "设计一个 LRU 缓存，并用 Java 完整实现 get 和 put",
+    "want": "coding",
+    "run": 2,
+    "arm": "after",
+    "total_ms": 3323,
+    "parsed": {
+      "kind": "coding",
+      "answer": "用 HashMap 存 key 到节点的映射实现 O(1) 查找，再用双向链表维护访问顺序，最近使用的放头部，超出容量就删尾部；这样 get 和 put 都是 O(1)，空间 O(capacity)。\n```java\nimport java.util.HashMap;\nimport java.util.Map;\n\npublic class LRUCache {\n\n    // 双向链表节点\n    private static class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final int capacity;\n    private final Map<Integer, Node> map;\n    // 虚拟头尾节点，省去边界判断\n    private final Node head;\n    private final Node tail;\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        // 访问过就移到头部，标记为最近使用\n        moveToHead(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            node.value = value;\n            moveToHead(node);\n            return;\n        }\n        // 容量满了先淘汰尾部（最久未使用）\n        if (map.size() == capacity) {\n            Node removed = removeTail();\n            map.remove(removed.key);\n        }\n        Node newNode = new Node(key, value);\n        map.put(key, newNode);\n        addToHead(newNode);\n    }\n\n    private void addToHead(Node node) {\n        node.prev = head;\n        node.next = head.next;\n        head.next.prev = node;\n        head.next = node;\n    }\n\n    private void removeNode(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n\n    private void moveToHead(Node node) {\n        removeNode(node);\n        addToHead(node);\n    }\n\n    private Node removeTail() {\n        Node node = tail.prev;\n        removeNode(node);\n        return node;\n    }\n}\n```",
+      "bullets": [],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "coding_override",
+    "question": "设计一个 LRU 缓存，并用 Java 完整实现 get 和 put",
+    "want": "coding",
+    "run": 3,
+    "arm": "before",
+    "total_ms": 3674,
+    "parsed": {
+      "kind": "coding",
+      "answer": "哈希表加双向链表：HashMap 存 key 到节点的映射实现 O(1) 查找，双向链表维护访问顺序，头部是最近使用、尾部是最久未使用。get 命中后把节点移到头部，put 时已存在就更新并移到头部，不存在则新建插入头部，超出容量就删掉尾部并同步移除 map 中的 key。时间 O(1)，空间 O(capacity)。\n```java\nimport java.util.HashMap;\nimport java.util.Map;\n\npublic class LRUCache {\n\n    // 双向链表节点\n    class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final int capacity;\n    private final Map<Integer, Node> map;\n    // 虚拟头尾节点，省掉边界判空\n    private final Node head;\n    private final Node tail;\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        // 命中后提升为最近使用\n        moveToHead(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            node.value = value;\n            moveToHead(node);\n            return;\n        }\n        if (map.size() == capacity) {\n            // 淘汰链表尾部的最久未使用节点\n            Node lru = tail.prev;\n            removeNode(lru);\n            map.remove(lru.key);\n        }\n        Node newNode = new Node(key, value);\n        map.put(key, newNode);\n        addToHead(newNode);\n    }\n\n    // 把节点摘下来插到头部\n    private void moveToHead(Node node) {\n        removeNode(node);\n        addToHead(node);\n    }\n\n    private void removeNode(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n\n    private void addToHead(Node node) {\n        node.next = head.next;\n        node.prev = head;\n        head.next.prev = node;\n        head.next = node;\n    }\n}\n```",
+      "bullets": [],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "coding_override",
+    "question": "设计一个 LRU 缓存，并用 Java 完整实现 get 和 put",
+    "want": "coding",
+    "run": 3,
+    "arm": "after",
+    "total_ms": 3078,
+    "parsed": {
+      "kind": "coding",
+      "answer": "用哈希表加双向循环链表：哈希表 O(1) 定位节点，双向链表维护访问顺序，最近使用的挂头部，容量满了就删尾节点；get 和 put 都是 O(1)，空间 O(capacity)。\n```java\nimport java.util.HashMap;\nimport java.util.Map;\n\npublic class LRUCache {\n\n    // 双向链表节点\n    private static class Node {\n        int key;\n        int value;\n        Node prev;\n        Node next;\n\n        Node(int key, int value) {\n            this.key = key;\n            this.value = value;\n        }\n    }\n\n    private final int capacity;\n    private final Map<Integer, Node> map;\n    private final Node head; // 哨兵，head.next 是最近使用的\n    private final Node tail; // 哨兵，tail.prev 是最久未使用的\n\n    public LRUCache(int capacity) {\n        this.capacity = capacity;\n        this.map = new HashMap<>();\n        this.head = new Node(0, 0);\n        this.tail = new Node(0, 0);\n        head.next = tail;\n        tail.prev = head;\n    }\n\n    public int get(int key) {\n        Node node = map.get(key);\n        if (node == null) {\n            return -1;\n        }\n        // 访问过就移到头部\n        moveToHead(node);\n        return node.value;\n    }\n\n    public void put(int key, int value) {\n        Node node = map.get(key);\n        if (node != null) {\n            node.value = value;\n            moveToHead(node);\n            return;\n        }\n        // 容量满了先淘汰尾节点\n        if (map.size() == capacity) {\n            Node lru = tail.prev;\n            removeNode(lru);\n            map.remove(lru.key);\n        }\n        Node newNode = new Node(key, value);\n        addToHead(newNode);\n        map.put(key, newNode);\n    }\n\n    // 把节点从原位置摘下来挂到头部\n    private void moveToHead(Node node) {\n        removeNode(node);\n        addToHead(node);\n    }\n\n    private void addToHead(Node node) {\n        node.prev = head;\n        node.next = head.next;\n        head.next.prev = node;\n        head.next = node;\n    }\n\n    private void removeNode(Node node) {\n        node.prev.next = node.next;\n        node.next.prev = node.prev;\n    }\n}\n```",
+      "bullets": [],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "knowledge_control",
+    "question": "说说 MySQL 聚簇索引和非聚簇索引的区别",
+    "want": "knowledge",
+    "run": 1,
+    "arm": "before",
+    "total_ms": 2002,
+    "parsed": {
+      "kind": "knowledge",
+      "answer": "聚簇索引的叶子节点直接存整行数据，一张表只能有一个，InnoDB 里通常就是主键索引，所以按主键查一次 B+ 树就拿到行；非聚簇索引叶子存的是索引列加主键值，查不到需要的列时要拿主键回表再查一次聚簇索引。所以二级索引查非索引列会多一次回表，但覆盖索引能避免这个问题。",
+      "bullets": [
+        "InnoDB 建表时如果没有主键，会选第一个非空唯一索引，再没有就生成隐藏的 6 字节 row_id。",
+        "回表是按主键走聚簇索引，主键太长会让所有二级索引都变大，这是主键建议自增且短的原因。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "knowledge_control",
+    "question": "说说 MySQL 聚簇索引和非聚簇索引的区别",
+    "want": "knowledge",
+    "run": 1,
+    "arm": "after",
+    "total_ms": 2028,
+    "parsed": {
+      "kind": "knowledge",
+      "answer": "聚簇索引的叶子节点直接存整行数据，所以一张表只能有一个，通常是主键；非聚簇索引的叶子节点存的是索引列加主键值，查非索引列要拿主键回表再查一次，这就是回表。所以二级索引查询如果只取主键或索引列，就能走覆盖索引，省掉回表。",
+      "bullets": [
+        "InnoDB 里主键就是聚簇索引；没有主键会用第一个非空唯一索引，再没有就生成隐藏的 row_id。",
+        "回表是随机 IO，这也是为什么建议用自增主键，避免页分裂。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "knowledge_control",
+    "question": "说说 MySQL 聚簇索引和非聚簇索引的区别",
+    "want": "knowledge",
+    "run": 2,
+    "arm": "before",
+    "total_ms": 2269,
+    "parsed": {
+      "kind": "knowledge",
+      "answer": "聚簇索引的叶子节点直接存整行数据，一张表只能有一个，InnoDB 里主键就是聚簇索引；非聚簇索引的叶子节点存的是索引列加主键值，查其他字段要拿主键再回聚簇索引查一次，这就是回表。所以二级索引查询尽量走覆盖索引避免回表，另外主键建议用自增的，否则插入会频繁页分裂。",
+      "bullets": [
+        "InnoDB 里没有主键会选唯一非空索引，再没有就生成隐藏的 6 字节 row_id 做聚簇索引。",
+        "MyISAM 没有聚簇索引，索引和数据分开存，叶子节点存的是行地址。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "knowledge_control",
+    "question": "说说 MySQL 聚簇索引和非聚簇索引的区别",
+    "want": "knowledge",
+    "run": 2,
+    "arm": "after",
+    "total_ms": 2416,
+    "parsed": {
+      "kind": "knowledge",
+      "answer": "聚簇索引是索引和数据存在一起，叶子节点直接就是整行数据，一张表只能有一个，通常就是主键；非聚簇索引叶子节点存的是索引列加主键值，查其他字段要拿主键再回表查一次。所以按主键查最快，走二级索引多一次回表，覆盖索引能避免这次回表。",
+      "bullets": [
+        "InnoDB 里没有主键会用唯一非空列，再没有就生成 6 字节的 row_id，所以每张 InnoDB 表一定有聚簇索引。",
+        "回表就是二级索引查完拿主键去聚簇索引再查一次，explain 里的 using index 说明是覆盖索引、不用回表。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "knowledge_control",
+    "question": "说说 MySQL 聚簇索引和非聚簇索引的区别",
+    "want": "knowledge",
+    "run": 3,
+    "arm": "before",
+    "total_ms": 2061,
+    "parsed": {
+      "kind": "knowledge",
+      "answer": "聚簇索引的叶子节点直接存整行数据，所以一张表只能有一个，InnoDB 里通常就是主键；非聚簇索引的叶子节点存的是索引列加主键值，查其他列要再回表查一次。所以按主键查最快，走二级索引多一次回表，除非是覆盖索引，索引里已经有你要的列就不用回表。",
+      "bullets": [
+        "InnoDB 的二级索引叶子存主键值，所以主键别用太长的字段，二级索引都会带上它。",
+        "没有主键时 InnoDB 会选唯一非空索引，都没有就建一个隐藏的 6 字节 row_id 当聚簇索引。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  },
+  {
+    "key": "knowledge_control",
+    "question": "说说 MySQL 聚簇索引和非聚簇索引的区别",
+    "want": "knowledge",
+    "run": 3,
+    "arm": "after",
+    "total_ms": 2800,
+    "parsed": {
+      "kind": "knowledge",
+      "answer": "聚簇索引的叶子节点直接存整行数据，所以一张表只能有一个，InnoDB 里默认就是主键索引；非聚簇索引叶子节点存的是索引列加主键值，查其他字段要拿主键回表再查一次。所以二级索引查非索引列会比主键查多一次 B+ 树查找，这也是为什么建议用自增主键、并且尽量走覆盖索引。",
+      "bullets": [
+        "InnoDB 没有主键时会选唯一非空索引，再没有就隐式生成 6 字节 row_id。",
+        "覆盖索引就是查询字段都在二级索引里，不用回表，explain 的 Extra 会显示 Using index。"
+      ],
+      "clarifying": null
+    },
+    "metrics": {
+      "kind_ok": true,
+      "shape_ok": true,
+      "signal_hits": {},
+      "signal_count": 0,
+      "signal_total": 0,
+      "forbidden_positive": []
+    }
+  }
+]

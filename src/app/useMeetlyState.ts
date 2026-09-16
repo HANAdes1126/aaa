@@ -38,10 +38,18 @@ export function useMeetlyState() {
   const [partialTranscript, setPartialTranscript] = useState<PartialTranscript | null>(null);
   const [transcriptHistory, setTranscriptHistory] = useState<TranscriptSegment[]>([]);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  // Number of speech segments currently being transcribed (started but not yet
+  // finalized). Drives the "recognizing…" state in the transcript rail so an
+  // empty rail while listening isn't mistaken for "not receiving anything".
+  const [pendingTranscriptCount, setPendingTranscriptCount] = useState(0);
   const [assistantMode, setAssistantMode] = useState<AssistantMode>("meeting");
   const [meetingPerspective, setMeetingPerspective] = useState<MeetingPerspective>("candidate");
   const [sessionKind, setSessionKind] = useState<SessionKind>("remote");
   const [audioSource, setAudioSource] = useState<AudioSource>("system");
+  // Whether a remote meeting should also capture the user's own microphone.
+  // Defaults to false for interviews: the assistant listens to the
+  // interviewer only so the candidate's own voice doesn't pollute the context.
+  const [recordUserMic, setRecordUserMic] = useState(false);
   const [meetingGoal, setMeetingGoal] = useState("");
   const [contextDocuments, setContextDocuments] = useState<ContextDocument[]>([]);
   const [contextDocumentMessage, setContextDocumentMessage] = useState<string | null>(null);
@@ -112,6 +120,8 @@ export function useMeetlyState() {
     setTranscriptHistory,
     transcriptError,
     setTranscriptError,
+    pendingTranscriptCount,
+    setPendingTranscriptCount,
     assistantMode,
     setAssistantMode,
     meetingPerspective,
@@ -120,6 +130,8 @@ export function useMeetlyState() {
     setSessionKind,
     audioSource,
     setAudioSource,
+    recordUserMic,
+    setRecordUserMic,
     meetingGoal,
     setMeetingGoal,
     contextDocuments,

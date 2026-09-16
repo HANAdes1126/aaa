@@ -6,6 +6,8 @@ src-tauri/gen/
 .DS_Store
 *.log
 
+__pycache__/
+
 docs/learn/
 
 # AI assistant workspace memory (not part of the project source)

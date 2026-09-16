@@ -1,4 +1,8 @@
-import { AUTO_ASSIST_MIN_CONFIDENCE, FULL_SESSION_SEGMENT_LIMIT } from "./constants";
+import {
+  AUTO_ASSIST_MIN_CONFIDENCE,
+  FULL_SESSION_SEGMENT_LIMIT,
+  TRANSCRIPT_DEDUPE_WINDOW_MS,
+} from "./constants";
 import { summarizeContextDocuments } from "./contextDocuments";
 import { debugLog } from "./platform";
 import type {
@@ -26,6 +30,12 @@ export function isLikelyDuplicateTranscript(candidate: TranscriptSegment, existi
   }
 
   return existing.slice(-8).some((segment) => {
+    // Compare on transcript timestamps, never Date.now(): the segment clock
+    // and the wall clock are not the same origin, and mixing them made the
+    // session-anchor decay silently wrong once already.
+    if (candidate.startMs - segment.endMs > TRANSCRIPT_DEDUPE_WINDOW_MS) {
+      return false;
+    }
     if (segment.source && candidate.source && segment.source !== candidate.source) {
       return false;
     }
@@ -86,6 +96,13 @@ export function questionConfidence(text: string) {
     /[?？]\s*$/.test(normalized) ||
     /(吗|呢|么|嘛|什么|为什么|怎么|怎样|如何|哪|多少|能不能|可不可以|有没有)/.test(normalized);
   if (hasExplicitQuestion) {
+    return 0.9;
+  }
+
+  // "请描述 X 的底层结构" is just as explicit a question as "X 是什么？" — it
+  // only looks weaker because Chinese doesn't need a particle for it. Scoring it
+  // below the explicit tier silently disabled speculative prefetch (0.88 gate).
+  if (hasInterviewRequest(text)) {
     return 0.9;
   }
 
@@ -323,26 +340,99 @@ function isFillerTranscript(text: string) {
   return /^(嗯+|呃+|啊+|哦+|好+|好的|可以|ok|okay|right|yeah|yes|no|mm|mmm|uh|um|thanks|thankyou)$/.test(normalized);
 }
 
-function isSetupTranscript(text: string) {
+export function isSetupTranscript(text: string) {
   const normalized = normalizeTranscriptText(text);
   return /^(你好)?(能)?听(得)?(到|见)吗(说一下|测试一下)?$/.test(normalized) ||
-    /^(hello|hi)(canyouhearme|test)?$/i.test(normalized);
+    /^(hello|hi)(canyouhearme|test)?$/i.test(normalized) ||
+    // Mic / connection checks in a remote interview. These end in 吗 so they
+    // look like questions, but answering them wastes a wake and pushes a junk
+    // card into the overlay at the worst possible moment (the opening minute).
+    /(听得到|听得见|能听见|能听到|有声音|看得到|看得见|能看到|屏幕共享|共享屏幕|可以开始|我们开始|开始了吗|准备好了吗)/.test(normalized) ||
+    /\b(can you hear|do you hear|are you there|can you see|screen share|shall we start|are you ready)\b/i.test(normalized);
 }
+
+// --- imperative request detection -------------------------------------------
+// The single biggest gap in question detection: Chinese interviewers phrase
+// questions as *requests*, not as 吗/呢 questions. "请描述哈希映射的底层结构。"
+// has no question mark and none of the usual particles, so it scored 0 on both
+// the prefetch path and the wake path and the user silently got nothing.
+//
+// Two shapes cover nearly all of them:
+//   1. Polite opener + verb  — 请描述 / 麻烦解释 / 能否介绍 / 你来讲 / 跟我讲
+//   2. Verb + 一下            — 描述一下 / 讲一下 / 总结一下 / 手写一下
+
+const REQUEST_VERBS =
+  "描述|解释|说明|介绍|讲解|讲讲|讲|说说|说|谈谈|谈|分析|概括|总结|对比|比较|列举|举例|实现|手写|写|设计|推导|计算|评价|聊聊|聊";
+
+const REQUEST_OPENERS = [
+  "请", "麻烦你", "麻烦", "能否", "可否", "能不能", "可不可以", "能不能",
+  "跟我", "你来", "你给", "你", "帮我", "想请你", "希望你能",
+];
+
+export const CHINESE_REQUEST_MARKERS: string[] = REQUEST_OPENERS.flatMap((opener) =>
+  ["描述", "解释", "说明", "介绍", "讲", "说", "谈", "分析", "概括", "总结", "对比", "比较", "列举", "举例", "实现", "手写", "写", "设计", "推导", "计算", "评价", "聊"].map(
+    (verb) => `${opener}${verb}`
+  )
+).concat(
+  ["简单", "详细", "具体", "大概", "再"].flatMap((adverb) =>
+    ["描述", "解释", "说明", "介绍", "讲", "说"].map((verb) => `请${adverb}${verb}`)
+  ),
+  // "X一下" imperative shape.
+  ["描述", "解释", "说明", "介绍", "讲解", "讲", "说", "谈", "分析", "概括", "总结", "对比", "比较", "列举", "举例", "实现", "手写", "写", "设计", "推导", "计算", "评价", "聊"].flatMap(
+    (verb) => [`${verb}一下`, `${verb}一${verb}`, `${verb}${verb}看`]
+  )
+);
+
+/** Verb-of-interrogation at the start of an utterance: "实现一个 LRU 缓存". */
+const CHINESE_IMPERATIVE_HEAD_RE = new RegExp(`^(?:${REQUEST_VERBS})`);
+
+const ENGLISH_REQUEST_RE =
+  /\b(please\s+(describe|explain|walk me through|tell me about|implement|write|design|compare|summarize)|describe|explain|implement|walk me through)\b/i;
+
+/**
+ * True when the text is an interviewer *asking* rather than stating. This is the
+ * shared predicate for both the prefetch candidate path and the STT wake path —
+ * keeping one definition is what stops the two from drifting apart again.
+ */
+export function hasInterviewRequest(text: string): boolean {
+  if (!text) return false;
+  if (CHINESE_REQUEST_MARKERS.some((marker) => text.includes(marker))) return true;
+  if (CHINESE_IMPERATIVE_HEAD_RE.test(text.trim())) return true;
+  return ENGLISH_REQUEST_RE.test(text);
+}
+
+/** Nouns that, at the end of a phrase, mark it as "explain X's <noun>". */
+const TOPIC_NOUN_TAIL =
+  "原理|机制|关系|区别|联系|作用|流程|实现|底层|源码|架构|抽象|调度|协调|切片|优先级|" +
+  "结构|特点|特性|优点|缺点|场景|过程|步骤|方案|算法|复杂度|意义|方式|方法|策略|条件|时机|" +
+  "情况|原因|差异|细节|思路|做法|瓶颈|优化|注意点|难点|好处|代价|优势|劣势|行为|本质|定义|" +
+  "概念|分类|类型|种类|组成|构成|设计";
+
+const TOPIC_NOUN_TAIL_RE = new RegExp(`[\\da-z\\u4e00-\\u9fa5]{2,}(?:的)?(?:${TOPIC_NOUN_TAIL})$`, "i");
 
 function hasInterviewPrompt(text: string) {
   return /\b(tell me about|walk me through|talk me through|explain|describe|how would you|what do you think|what is your|why should|can you|could you|have you|design a|time complexity|space complexity|tradeoff|trade-off)\b/i.test(
     text
   ) ||
-    /(讲一下|说一下|介绍一下|解释一下|聊聊|谈谈|你怎么看|你怎么理解|你会怎么|设计一个|系统设计|复杂度|权衡|取舍)/.test(text);
+    /(讲一下|说一下|介绍一下|解释一下|聊聊|谈谈|你怎么看|你怎么理解|你会怎么|设计一个|系统设计|复杂度|权衡|取舍)/.test(text) ||
+    hasInterviewRequest(text);
 }
 
 function hasTopicPrompt(text: string) {
   const normalized = normalizeTranscriptText(text);
-  if (!normalized || isLikelyDeclarativeAnswer(normalized)) {
+  if (!normalized) {
+    return false;
+  }
+  // An explicit request outranks the declarative-answer heuristic: "请描述 X 的
+  // 底层结构" is a question no matter how its clauses are shaped.
+  if (hasInterviewRequest(text)) {
+    return true;
+  }
+  if (isLikelyDeclarativeAnswer(normalized)) {
     return false;
   }
 
-  return /[\da-z\u4e00-\u9fa5]{2,}(的)?(原理|机制|关系|区别|作用|流程|实现|底层|源码|架构|抽象|调度|协调|切片|优先级)$/i.test(normalized) ||
+  return TOPIC_NOUN_TAIL_RE.test(normalized) ||
     /(是什么关系|做了什么|干什么|怎么实现|如何实现|底层代码)/.test(normalized);
 }
 

@@ -15,11 +15,19 @@ export function useAssistantAsk(
   flushCurrentMicSegment: () => Promise<void>,
   agent: AgentRuntimeActions
 ) {
+  // Incremented by `clearConversation`; captured by each ask so a response that
+  // arrives after the user moved on can be recognised and thrown away.
+  const askGenerationRef = useRef(0);
+
   const askAssistant = useCallback(async (message = "需要帮助") => {
     if (ctx.isAsking) {
       return;
     }
 
+    // Bumped by `clearConversation`. Without it, an answer that lands after the
+    // user started a new conversation would resurrect the turns they just
+    // cleared, which reads as "the + button did nothing".
+    const generation = askGenerationRef.current;
     const question = resolveAgentChatMessage(message);
     ctx.setIsAsking(true);
     ctx.setAssistantError(null);
@@ -36,7 +44,12 @@ export function useAssistantAsk(
       error: null,
       toolTraces: [],
     };
-    const previousTurns = buildAgentChatHistory(ctx.agentChatTurnsRef.current);
+    // Merge in what the proactive coach already said, so a manual follow-up
+    // continues the interview instead of opening a brand new conversation.
+    const previousTurns = buildAgentChatHistory(
+      ctx.agentChatTurnsRef.current,
+      agent.coachMemoryForAsk()
+    );
     setChatTurns(ctx, [...ctx.agentChatTurnsRef.current, pendingTurn]);
     agent.recordManualAskStarted(askId);
 
@@ -75,12 +88,26 @@ export function useAssistantAsk(
         turns: previousTurns,
       }) ?? buildBrowserPreviewSuggestion(question);
 
+      if (askGenerationRef.current !== generation) {
+        debugLog(`[agent-chat] discarded stale answer ask=${askId}`);
+        return;
+      }
+
       setChatTurns(ctx, ctx.agentChatTurnsRef.current.map((turn) =>
         turn.id === askId ? { ...turn, suggestion, error: null } : turn
       ));
       ctx.setAssistantSuggestion(suggestion);
       ctx.setAssistantError(null);
       ctx.setIsAsking(false);
+      // Hand the answer to the coach's memory too. The interviewer routinely
+      // follows up on it, and until this existed the coach answered that
+      // follow-up with no idea what the candidate had just been told.
+      agent.recordManualAnswer(
+        // "需要帮助" is the placeholder for "asked with no text"; recording it
+        // verbatim would put a question nobody asked into memory.
+        question === "需要帮助" ? "" : question,
+        suggestion.answer
+      );
       agent.recordManualAskFinished(askId, "spoken", "message_committed");
       session.updateInterviewSession((current) => ({
         ...current,
@@ -92,6 +119,10 @@ export function useAssistantAsk(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       agent.recordManualAskFinished(askId, "failed", "request_failed");
+      if (askGenerationRef.current !== generation) {
+        debugLog(`[agent-chat] discarded stale error ask=${askId}`);
+        return;
+      }
       ctx.setAssistantError(message);
       ctx.setAssistantDraft("");
       ctx.setIsAsking(false);
@@ -109,6 +140,7 @@ export function useAssistantAsk(
   const askScreenshot = useCallback(async (question?: string) => {
     if (ctx.isAsking) return;
 
+    const generation = askGenerationRef.current;
     const resolved = question?.trim() || "帮我分析这道题并给出答案";
     ctx.setIsAsking(true);
     ctx.setAssistantError(null);
@@ -158,6 +190,10 @@ export function useAssistantAsk(
       if (!suggestion) {
         throw new Error("未能分析截图。");
       }
+      if (askGenerationRef.current !== generation) {
+        debugLog(`[agent-shot] discarded stale analysis ask=${askId}`);
+        return;
+      }
 
       // Only flip to the assistant panel if there is no panel open yet — i.e.
       // the user triggered this from the global hotkey with everything
@@ -173,10 +209,19 @@ export function useAssistantAsk(
       ctx.setAssistantSuggestion(suggestion);
       ctx.setAssistantError(null);
       ctx.setIsAsking(false);
+      // Screenshot answers are the ones interviewers follow up on most: they
+      // ask "walk me through your approach". Remember what we answered.
+      // The question lives in the image, so only record it when the user typed
+      // one — the default placeholder would otherwise become a fake question.
+      agent.recordManualAnswer(question?.trim() ?? "", suggestion.answer);
       agent.recordManualAskFinished(askId, "spoken", "message_committed");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       agent.recordManualAskFinished(askId, "failed", "request_failed");
+      if (askGenerationRef.current !== generation) {
+        debugLog(`[agent-shot] discarded stale error ask=${askId}`);
+        return;
+      }
       ctx.setAssistantError(message);
       ctx.setAssistantDraft("");
       ctx.setIsAsking(false);
@@ -236,12 +281,35 @@ export function useAssistantAsk(
     return () => window.removeEventListener("keydown", handleAskShortcut);
   }, [askAssistant]);
 
+  /**
+   * Starts a fresh conversation — and if an answer is still being generated,
+   * abandons it.
+   *
+   * This used to bail out with `if (ctx.isAsking) return`, which made the +
+   * button dead exactly when it mattered: a stuck generation was unstoppable
+   * and the panel stayed busy until the request finally resolved. The request
+   * itself can't be revoked (a Tauri invoke has no cancellation token), so we
+   * invalidate it instead — bump the generation so its result is dropped, and
+   * release every busy flag right away.
+   */
   const clearConversation = useCallback(() => {
-    if (ctx.isAsking) return;
+    askGenerationRef.current += 1;
+    agent.cancelCoach("user_cleared_conversation");
+    ctx.setIsAsking(false);
     setChatTurns(ctx, []);
+    // The timeline merges proactive coach cards with manual asks, so clearing
+    // only the latter left the previous conversation half on screen.
+    ctx.coachMessagesRef.current = [];
+    ctx.setCoachMessages([]);
     ctx.setAssistantSuggestion(null);
     ctx.setAssistantError(null);
-  }, [ctx]);
+    ctx.setAssistantDraft("");
+    session.updateInterviewSession((current) => ({
+      ...current,
+      status: current.endedAt ? "idle" : "listening",
+    }));
+    debugLog("[agent-chat] conversation cleared; in-flight run discarded");
+  }, [agent, ctx, session]);
 
   return { askAssistant, askScreenshot, clearConversation };
 }

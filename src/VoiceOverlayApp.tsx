@@ -23,6 +23,7 @@ import remarkGfm from "remark-gfm";
 import { useDictation } from "./app/dictation/useDictation";
 import type { DictationViewState } from "./app/dictation/types";
 import { useOverlayAppearance } from "./app/appearance";
+import { DESIGN_KIND, stripPictographs } from "./app/coachMessageFormat";
 import { debugLog, isTauriRuntime, safeInvoke } from "./app/platform";
 import type { VoiceAskConversationState, VoiceAskViewState } from "./app/voiceAsk/types";
 import {
@@ -748,19 +749,24 @@ function SuggestionContent({ suggestion }: { suggestion: AssistantSuggestion }) 
             ),
           }}
         >
-          {suggestion.answer}
+          {stripPictographs(suggestion.answer)}
         </ReactMarkdown>
       </div>
       {suggestion.bullets.length > 0 && (
-        <ul className="mt-3 grid gap-1.5 pl-4 text-[12px] leading-relaxed text-white/62">
-          {suggestion.bullets.map((bullet, index) => (
-            <li key={`${bullet}-${index}`}>{bullet}</li>
-          ))}
-        </ul>
+        <>
+          {suggestion.kind === DESIGN_KIND && (
+            <p className="mt-3 mb-0 text-[11px] text-white/42">设计思路</p>
+          )}
+          <ul className={`${suggestion.kind === DESIGN_KIND ? "mt-1.5" : "mt-3"} grid gap-1.5 pl-4 text-[12px] leading-relaxed text-white/62`}>
+            {suggestion.bullets.map((bullet, index) => (
+              <li key={`${bullet}-${index}`}>{stripPictographs(bullet)}</li>
+            ))}
+          </ul>
+        </>
       )}
       {suggestion.clarifyingQuestion && (
         <p className="mt-3 mb-0 border-t border-white/[0.08] pt-3 text-[12px] leading-relaxed text-white/58">
-          {suggestion.clarifyingQuestion}
+          {stripPictographs(suggestion.clarifyingQuestion)}
         </p>
       )}
     </>

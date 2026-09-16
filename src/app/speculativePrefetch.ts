@@ -20,17 +20,21 @@ import type {
  */
 
 /**
- * 与教练 transport 保持一致的模式解析。历史原因：会话类型只有
- * remote / in_person（会议），其余分支保留以兼容未来 interview 会话。
+ * 与教练 transport 保持一致的模式解析。视角优先：本产品是面试助手，
+ * perspective 明确区分候选人/面试官，因此面试视角优先于会话类型，避免
+ * 远程面试被误路由到 meeting（商务谈判）模式。
  */
 export function resolveCoachMode(
   sessionKind: SessionKind,
   perspective: MeetingPerspective
 ): AssistantMode {
-  if (sessionKind === "remote" || sessionKind === "in_person") {
-    return "meeting";
+  if (perspective === "interviewer") {
+    return "interviewer";
   }
-  return perspective === "interviewer" ? "interviewer" : "interview";
+  if (perspective === "candidate") {
+    return "interview";
+  }
+  return "meeting";
 }
 
 /**

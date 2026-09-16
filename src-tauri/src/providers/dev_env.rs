@@ -140,6 +140,9 @@ fn import(
             provider_id,
             base_url,
             model,
+            // The .env seed has no vision key; None means "reuse the text
+            // model", which is the right default for a dev bootstrap.
+            vision_model: None,
             mmproj_path: None,
         },
     ) {

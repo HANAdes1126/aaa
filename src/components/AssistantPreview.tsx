@@ -1,6 +1,7 @@
 import { Brain, Loader2, MessageCircle, Wrench } from "lucide-react";
 import { useLayoutEffect, useRef, type UIEvent } from "react";
 import { coachTriggerLabel, questionKindLabel } from "../app/interviewLogic";
+import { DESIGN_KIND, stripPictographs } from "../app/coachMessageFormat";
 import type {
   AssistantSuggestion,
   AutoAssistHint,
@@ -146,17 +147,22 @@ function SuggestionCard({
           <p className="m-0 text-[13px] leading-normal text-[#ff5c70]">{assistantError}</p>
         ) : assistantSuggestion ? (
           <>
-            <p className="m-0 text-[13px] leading-normal text-white/90">{assistantSuggestion.answer}</p>
+            <p className="m-0 text-[13px] leading-normal text-white/90">{stripPictographs(assistantSuggestion.answer)}</p>
             {assistantSuggestion.bullets.length > 0 && (
-              <ul className="mt-2 list-disc pl-[18px]">
-                {assistantSuggestion.bullets.map((bullet, index) => (
-                  <li key={index} className="text-[13px] leading-normal text-white/70">{bullet}</li>
-                ))}
-              </ul>
+              <>
+                {assistantSuggestion.kind === DESIGN_KIND && (
+                  <p className="mt-2 mb-0 text-[11px] text-white/45">设计思路</p>
+                )}
+                <ul className={`${assistantSuggestion.kind === DESIGN_KIND ? "mt-1" : "mt-2"} list-disc pl-[18px]`}>
+                  {assistantSuggestion.bullets.map((bullet, index) => (
+                    <li key={index} className="text-[13px] leading-normal text-white/70">{stripPictographs(bullet)}</li>
+                  ))}
+                </ul>
+              </>
             )}
             {assistantSuggestion.clarifyingQuestion && (
               <p className="mt-2 text-[13px] italic leading-normal text-white/50">
-                {assistantSuggestion.clarifyingQuestion}
+                {stripPictographs(assistantSuggestion.clarifyingQuestion)}
               </p>
             )}
           </>

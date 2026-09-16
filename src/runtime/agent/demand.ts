@@ -1,5 +1,7 @@
-import type { SessionKind, TranscriptSegment } from "../../app/types";
+import type { MeetingPerspective, SessionKind, TranscriptSegment } from "../../app/types";
 import { createSttQuestionWake, createSttSignalWake, type WakeEvent } from "./wake";
+import { debugLog } from "../../app/platform";
+import { hasInterviewRequest, isSetupTranscript } from "../../app/interviewLogic";
 
 const CHINESE_QUESTION_KEYWORDS = [
   "吗",
@@ -14,6 +16,35 @@ const CHINESE_QUESTION_KEYWORDS = [
   "有没有",
   "多少",
   "哪",
+  // Indirect question markers common in interview settings — these don't
+  // end in `吗/呢` but are unmistakably questions ("说说你对 X 的理解",
+  // "讲讲你的思路", "介绍一下 Y"). Missing these means the coach
+  // silently ignores a real question and the candidate gets nothing.
+  "理解",
+  "看法",
+  "想法",
+  "思路",
+  "讲讲",
+  "聊聊",
+  "说说",
+  "讲一下",
+  "讲讲看",
+  "聊聊看",
+  "介绍一下",
+  "介绍下",
+  "讲一讲",
+  "说一说",
+  "谈谈",
+  "谈一谈",
+  "聊一聊",
+  "讲讲看吧",
+  "讲讲你",
+  "说说你的",
+  "你的看法",
+  "你的理解",
+  "如何看",
+  "怎么看",
+  "怎么看",
 ];
 
 const ENGLISH_QUESTION_KEYWORDS = [
@@ -31,30 +62,54 @@ const ENGLISH_QUESTION_KEYWORDS = [
 
 export function detectSttWake(
   segment: TranscriptSegment,
-  sessionKind: SessionKind = "remote"
+  sessionKind: SessionKind = "remote",
+  perspective: MeetingPerspective = "candidate"
 ): WakeEvent | null {
   const text = segment.text.trim();
   if (!text) return null;
+
+  // Mic and connection checks ("能听到吗", "can you hear me") grammatically are
+  // questions, but answering them pushes a junk card during the opening minute.
+  if (isSetupTranscript(text)) return null;
 
   const lower = text.toLowerCase();
   const isQuestion =
     text.endsWith("?") ||
     text.endsWith("？") ||
+    // Shared with the prefetch candidate path on purpose: the two used to carry
+    // separate keyword lists, so the same sentence scored as a question in one
+    // and as noise in the other.
+    hasInterviewRequest(text) ||
     CHINESE_QUESTION_KEYWORDS.some((keyword) => text.includes(keyword)) ||
     ENGLISH_QUESTION_KEYWORDS.some((keyword) => lower.includes(keyword));
+
+  // DEBUG: trace detection decisions for stt wake.
+  debugLog(
+    `[demand-trace] segment=${segment.id} text=${JSON.stringify(text)} isQuestion=${isQuestion} kind=${sessionKind} perspective=${perspective}`
+  );
 
   if (isQuestion) {
     return createSttQuestionWake(text);
   }
 
-  if (sessionKind === "remote" || sessionKind === "in_person") {
+  // Interview (candidate/interviewer) is a Q&A context, not a negotiation:
+  // skip the meeting-commercial-signal and external-context wake paths so a
+  // candidate mentioning "上一家公司" or "下一步" doesn't pull the coach into
+  // business-negotiation coaching.
+  const isInterview = perspective === "candidate" || perspective === "interviewer";
+
+  // Guard is `!isInterview` alone. It used to also require
+  // `sessionKind === "remote" || "in_person"`, which silently excluded
+  // "meeting" — the one kind where commercial signals actually matter. The
+  // perspective check already keeps a real interview out of this path.
+  if (!isInterview) {
     const negotiationSignal = detectMeetingSignal(text);
     if (negotiationSignal) {
       return createSttSignalWake(text, negotiationSignal);
     }
   }
 
-  if (needsExternalContext(text)) {
+  if (!isInterview && needsExternalContext(text)) {
     return createSttSignalWake(text, "external_context_needed");
   }
 

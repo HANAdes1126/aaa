@@ -8,6 +8,7 @@ import type {
   AgentToolTraceEvent,
   AudioLevelChanged,
   CoachToolTrace,
+  PartialTranscript,
   TranscriptError,
   TranscriptSegment,
 } from "./types";
@@ -70,25 +71,51 @@ export function useTauriEvents(
     let disposed = false;
     let unlistenFinal: (() => void) | undefined;
     let unlistenError: (() => void) | undefined;
+    let unlistenStarted: (() => void) | undefined;
+    let unlistenPartial: (() => void) | undefined;
 
     void listen<TranscriptSegment>("transcript_final", (event) => {
-      if (!disposed) autoAssist.addTranscriptSegment(event.payload);
+      if (disposed) return;
+      ctx.setPendingTranscriptCount((current) => Math.max(0, current - 1));
+      ctx.setPartialTranscript(null);
+      autoAssist.addTranscriptSegment(event.payload);
     }).then((nextUnlisten) => {
       if (disposed) nextUnlisten();
       else unlistenFinal = nextUnlisten;
     });
 
+    void listen<PartialTranscript>("transcript_partial", (event) => {
+      if (disposed) return;
+      ctx.setPartialTranscript(event.payload);
+    }).then((nextUnlisten) => {
+      if (disposed) nextUnlisten();
+      else unlistenPartial = nextUnlisten;
+    });
+
     void listen<TranscriptError>("transcript_error", (event) => {
-      if (!disposed) ctx.setTranscriptError(event.payload.message);
+      if (disposed) return;
+      ctx.setPendingTranscriptCount((current) => Math.max(0, current - 1));
+      ctx.setPartialTranscript(null);
+      ctx.setTranscriptError(event.payload.message);
     }).then((nextUnlisten) => {
       if (disposed) nextUnlisten();
       else unlistenError = nextUnlisten;
+    });
+
+    void listen<string>("transcript_started", () => {
+      if (disposed) return;
+      ctx.setPendingTranscriptCount((current) => current + 1);
+    }).then((nextUnlisten) => {
+      if (disposed) nextUnlisten();
+      else unlistenStarted = nextUnlisten;
     });
 
     return () => {
       disposed = true;
       unlistenFinal?.();
       unlistenError?.();
+      unlistenStarted?.();
+      unlistenPartial?.();
     };
   }, [autoAssist, ctx]);
 

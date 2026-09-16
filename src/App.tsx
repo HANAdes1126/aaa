@@ -296,7 +296,6 @@ export function App() {
 
           {ctx.openPanel === "assistant" || ctx.openPanel === "settings" ? (
             <AgentWorkspace
-              askAssistant={assistant.askAssistant}
               askScreenshot={assistant.askScreenshot}
               clearConversation={assistant.clearConversation}
               closePanel={() => void windowActions.setPanel(null)}

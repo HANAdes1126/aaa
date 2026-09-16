@@ -80,7 +80,11 @@ if pgrep -f "Meetly.app/Contents/MacOS" >/dev/null 2>&1; then
 fi
 
 info "Installing to /Applications"
-rm -rf "$APP_DST"
+if [ -d "$APP_DST" ]; then
+  BACKUP_DST="/tmp/Meetly-old-$(date +%Y%m%d-%H%M%S).app"
+  mv "$APP_DST" "$BACKUP_DST"
+  ok "Previous app backed up: $BACKUP_DST"
+fi
 cp -R "$APP_SRC" /Applications/
 
 # Unsigned/ad-hoc builds get a quarantine flag from the copy, which makes macOS

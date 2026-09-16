@@ -709,7 +709,7 @@ textarea:focus-visible {
 
 .workspace-rail-footer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 5px;
   border-top: 1px solid rgb(238 240 232 / 0.08);
   padding: 10px 9px;
@@ -762,6 +762,47 @@ textarea:focus-visible {
 }
 
 .workspace-session-button span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-record-toggle {
+  display: flex;
+  height: 26px;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid rgb(238 240 232 / 0.09);
+  border-radius: 6px;
+  background: rgb(238 240 232 / 0.02);
+  color: rgb(238 240 232 / 0.56);
+  cursor: pointer;
+  font-size: 10px;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.workspace-record-toggle:hover {
+  border-color: rgb(238 240 232 / 0.16);
+  background: rgb(238 240 232 / 0.07);
+  color: #f3f4ed;
+}
+
+.workspace-record-toggle svg {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+}
+
+.workspace-record-label {
+  color: rgb(238 240 232 / 0.4);
+}
+
+.workspace-record-value {
   min-width: 0;
   flex: 1;
   overflow: hidden;
@@ -1083,191 +1124,61 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
-.agent-composer-shell {
-  flex: 0 0 auto;
-  margin: 0 16px 16px;
-  border: 1px solid rgb(238 240 232 / 0.12);
-  border-radius: 7px;
-  background: #111313;
-  box-shadow: 0 9px 24px rgb(0 0 0 / 0.16);
-  transition: border-color 140ms ease;
-}
-
-.agent-composer-shell:focus-within {
-  border-color: rgb(196 122 80 / 0.56);
-}
-
-.agent-composer-shell textarea {
-  display: block;
-  width: 100%;
-  min-height: 54px;
-  max-height: 112px;
-  resize: none;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  padding: 11px 12px 5px;
-  color: #f1f2ea;
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.agent-composer-shell textarea::placeholder {
-  color: rgb(238 240 232 / 0.28);
-}
-
-.agent-composer-footer {
-  display: flex;
-  min-height: 34px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 3px 7px 7px 12px;
-}
-
-.agent-composer-footer > span {
-  min-width: 0;
-  overflow: hidden;
-  color: rgb(238 240 232 / 0.28);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-composer-footer button {
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 6px;
-  background: #d28a60;
-  color: #1b1210;
-  cursor: pointer;
-  transition: background-color 140ms ease, transform 140ms ease;
-}
-
-.agent-composer-footer button:hover {
-  background: #e19a70;
-}
-
-.agent-composer-footer button:active {
-  transform: scale(0.95);
-}
-
-.agent-composer-footer button:disabled {
-  cursor: wait;
-  opacity: 0.45;
-}
-
-.agent-composer-footer svg {
-  width: 15px;
-  height: 15px;
-}
-
 .transcript-rail {
   display: flex;
   min-width: 0;
-  min-height: 0;
-  flex-direction: column;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid rgb(238 240 232 / 0.08);
+  padding: 7px 12px;
   background: #141616;
 }
 
-.transcript-rail-header {
-  display: flex;
-  min-height: 62px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border-bottom: 1px solid rgb(238 240 232 / 0.08);
-  padding: 10px 12px;
-}
-
-.transcript-rail-header p,
-.transcript-rail-header span {
-  margin: 0;
-}
-
-.transcript-rail-header p {
-  color: rgb(238 240 232 / 0.68);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.transcript-rail-header div > span {
-  display: block;
-  margin-top: 3px;
-  color: #8fc59b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
-}
-
-.transcript-rail-header .voice-waveform {
-  flex: 0 0 auto;
-}
-
-.transcript-lines {
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
-  padding: 3px 12px;
-}
-
 .transcript-line {
-  border-bottom: 1px solid rgb(238 240 232 / 0.07);
-  padding: 10px 0;
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border-bottom: none;
 }
 
 .transcript-line > span {
+  flex: 0 0 auto;
   color: rgb(238 240 232 / 0.3);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 9px;
 }
 
 .transcript-line > p {
-  display: -webkit-box;
-  margin: 4px 0 0;
+  display: block;
+  margin: 0;
   overflow: hidden;
   color: rgb(238 240 232 / 0.57);
   font-size: 11px;
-  line-height: 1.5;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .transcript-line.is-live {
-  border-left: 2px solid #8fc59b;
-  padding-left: 9px;
+  border-left: none;
+  padding-left: 0;
 }
 
 .transcript-line.is-live > span {
   color: #8fc59b;
 }
 
-.transcript-empty {
-  margin: 18px 0;
+.transcript-line--empty {
+  opacity: 0.75;
+}
+
+.transcript-line--empty > p {
   color: rgb(238 240 232 / 0.27);
-  font-size: 11px;
-}
-
-.transcript-rail-footer {
-  display: flex;
-  height: 38px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 7px;
-  border-top: 1px solid rgb(238 240 232 / 0.08);
-  padding: 0 12px;
-  color: rgb(238 240 232 / 0.3);
-  font-size: 10px;
-}
-
-.transcript-rail-footer svg {
-  width: 12px;
-  height: 12px;
 }
 
 .workspace-ledger {
@@ -1419,11 +1330,24 @@ textarea:focus-visible {
   }
 
   .agent-layout {
+    /* When the island is too narrow for a side-by-side rail, fold the
+       transcript rail underneath the chat column instead of hiding it
+       (`display:none` used to drop the rail so a paused meeting looked
+       indistinguishable from a meeting whose STT had not produced
+       anything). */
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .agent-layout > .agent-column {
+    border-right: none;
+    border-bottom: 1px solid rgb(238 240 232 / 0.085);
   }
 
   .transcript-rail {
-    display: none;
+    /* The rail is now a compact single-line strip; do not let it balloon into
+       a tall column under the chat. */
+    border-top: none;
   }
 
   .workspace-ledger {
@@ -1547,6 +1471,28 @@ textarea:focus-visible {
   border: 1px solid #f7f7f3;
 }
 
+.workspace-record-toggle {
+  width: 40px;
+  height: 28px;
+  justify-content: center;
+  gap: 2px;
+  border-color: #d4d6cd;
+  border-radius: 8px;
+  background: #f7f7f3;
+  padding: 0 3px;
+  color: #62665b;
+}
+
+.workspace-record-label,
+.workspace-record-toggle svg {
+  display: none;
+}
+
+.workspace-record-value {
+  flex: none;
+  font-size: 9px;
+}
+
 .session-dot {
   background: #b8bab1;
 }
@@ -1623,6 +1569,26 @@ textarea:focus-visible {
 
 .agent-layout.is-solo .agent-column {
   border-right: none;
+}
+
+/* Narrow workbench: the transcript rail sits in its own fixed 268px column by
+   default, which squeezes the chat when the window is resized down. Fold the
+   rail underneath the chat once the window drops below this width instead of
+   letting it steal horizontal space. */
+@media (max-width: 1080px) {
+  .agent-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .agent-layout > .agent-column {
+    border-right: none;
+    border-bottom: 1px solid #e0e1da;
+  }
+
+  .transcript-rail {
+    max-height: 38vh;
+  }
 }
 
 .agent-timeline {
@@ -1721,41 +1687,6 @@ textarea:focus-visible {
 .agent-error-message {
   border-left-color: #bd6262;
   color: #9d4444;
-}
-
-.agent-composer-shell {
-  margin: 0 22px 20px;
-  border-color: #d8dad1;
-  border-radius: 9px;
-  background: #ffffff;
-  box-shadow: 0 5px 18px rgb(36 38 30 / 0.08);
-}
-
-.agent-composer-shell:focus-within {
-  border-color: #cccec5;
-  box-shadow: 0 5px 20px rgb(36 38 30 / 0.05);
-}
-
-.agent-composer-shell textarea {
-  color: #2d2f28;
-}
-
-.agent-composer-shell textarea::placeholder {
-  color: #a2a49b;
-}
-
-.agent-composer-footer > span {
-  color: #96998e;
-}
-
-.agent-composer-footer button {
-  border-radius: 7px;
-  background: #687518;
-  color: #ffffff;
-}
-
-.agent-composer-footer button:hover {
-  background: #586413;
 }
 
 .agent-tool-list {
@@ -1932,35 +1863,12 @@ textarea:focus-visible {
 
 .transcript-rail {
   background: #eff1ee;
-}
-
-.transcript-rail-header {
-  border-bottom-color: #dfe1dc;
-  padding: 11px 14px;
-}
-
-.transcript-rail-header p {
-  color: #55594f;
-  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.transcript-rail-header div > span {
-  color: #758122;
-}
-
-.transcript-lines {
-  padding: 4px 14px;
+  border-top-color: #dfe1dc;
 }
 
 .transcript-line {
-  border-bottom-color: #dde0da;
-  padding: 12px 0;
-}
-
-.transcript-line > span {
-  color: #9a9d93;
+  border-bottom: none;
+  padding: 0;
 }
 
 .transcript-line > p {
@@ -1969,20 +1877,12 @@ textarea:focus-visible {
 }
 
 .transcript-line.is-live {
-  border-left-color: #7b8729;
+  border-left: none;
+  padding-left: 0;
 }
 
 .transcript-line.is-live > span {
   color: #6a761c;
-}
-
-.transcript-empty,
-.transcript-rail-footer {
-  color: #9a9d93;
-}
-
-.transcript-rail-footer {
-  border-top-color: #dfe1dc;
 }
 
 .workspace-ledger {
@@ -2553,7 +2453,6 @@ textarea:focus-visible {
 .meetly-ghost .workspace-settings,
 .meetly-ghost .transcript-rail,
 .meetly-ghost .agent-column,
-.meetly-ghost .agent-composer-shell,
 .meetly-ghost .agent-user-message,
 .meetly-ghost .agent-tool-row,
 .meetly-ghost .context-drop-overlay,
@@ -2630,7 +2529,8 @@ textarea:focus-visible {
 .meetly-ghost .agent-markdown p,
 .meetly-ghost .agent-markdown li,
 .meetly-ghost .agent-user-message,
-.meetly-ghost .transcript-line.is-live > p {
+.meetly-ghost .transcript-line.is-live > p,
+.meetly-ghost .transcript-line > p {
   color: rgb(var(--ghost-ink) / var(--ghost-strong)) !important;
 }
 
@@ -2640,15 +2540,12 @@ textarea:focus-visible {
 .meetly-ghost .agent-message-meta time,
 .meetly-ghost .agent-user-message time,
 .meetly-ghost .transcript-line > span,
-.meetly-ghost .transcript-empty,
-.meetly-ghost .transcript-rail-footer,
-.meetly-ghost .agent-composer-footer > span,
 .meetly-ghost .ledger-row > time,
 .meetly-ghost .ledger-row p,
 .meetly-ghost .ledger-status,
 .meetly-ghost .workspace-nav-item kbd,
 .meetly-ghost .section-label {
-  color: rgb(var(--ghost-ink) / var(--ghost-soft)) !important;
+  color: rgb(var(--ghost-ink) / var(--ghost-base)) !important;
 }
 
 /* Accent fills are the loudest thing on screen; make them bare and grey. */
@@ -2661,10 +2558,10 @@ textarea:focus-visible {
 .meetly-ghost .voice-toolbar-button--active,
 .meetly-ghost .voice-icon-button--primary,
 .meetly-ghost .voice-icon-button--danger,
-.meetly-ghost .agent-composer-footer button,
 .meetly-ghost .workspace-nav-item,
 .meetly-ghost .workspace-nav-item.is-active,
 .meetly-ghost .workspace-session-button,
+.meetly-ghost .workspace-record-toggle,
 .meetly-ghost .workspace-utility-button,
 .meetly-ghost .workspace-header-button,
 .meetly-ghost .workspace-header-button.is-active,
@@ -2681,7 +2578,8 @@ textarea:focus-visible {
    is not caught by any other ghost rule above. Mouse-over is transient
    but the chip stays visible long enough to leak on a screenshot. */
 .meetly-ghost .workspace-nav-item:hover,
-.meetly-ghost .workspace-header-button:hover {
+.meetly-ghost .workspace-header-button:hover,
+.meetly-ghost .workspace-record-toggle:hover {
   background: transparent !important;
 }
 

@@ -1,7 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { blobToBase64, debugLog, isTauriRuntime } from "../platform";
+import {
+  COACH_ANSWERED_EVENT,
+  SESSION_MEMORY_CLEARED_EVENT,
+  VOICE_ASK_ANSWERED_EVENT,
+  VOICE_ASK_ANSWER_BRIDGE_CHARS,
+} from "../constants";
 import { startMicrophoneClip, type MicrophoneClipSession } from "../microphoneClip";
 import type { AssistantMode, AssistantSuggestion } from "../types";
 import type {
@@ -39,6 +45,55 @@ export function useVoiceAsk() {
   // without re-running the effect that wires the listeners.
   const modeRef = useRef(mode);
   modeRef.current = mode;
+
+  // What the proactive coach already answered, bridged in from the island
+  // window. Deliberately kept out of `conversation`: these are not the overlay's
+  // own turns and must not be rendered as if the user had asked them here. They
+  // only travel along as history so a Fn-held follow-up can build on them.
+  const coachTurnsRef = useRef<Array<{ question: string; suggestion: AssistantSuggestion }>>([]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+
+    let disposed = false;
+    const unlisteners: Array<() => void> = [];
+
+    const register = async () => {
+      const registered = [
+        await listen<{ question?: string; answer?: string }>(COACH_ANSWERED_EVENT, (event) => {
+          const answer = (event.payload?.answer ?? "").trim();
+          if (!answer) return;
+          coachTurnsRef.current = [
+            ...coachTurnsRef.current,
+            {
+              question: event.payload?.question ?? "",
+              suggestion: {
+                answer,
+                bullets: [],
+                clarifyingQuestion: null,
+                kind: "knowledge",
+              },
+            },
+          ].slice(-3);
+        }),
+        await listen(SESSION_MEMORY_CLEARED_EVENT, () => {
+          coachTurnsRef.current = [];
+        }),
+      ];
+      if (disposed) {
+        registered.forEach((fn) => fn());
+        return;
+      }
+      unlisteners.push(...registered);
+    };
+
+    void register();
+
+    return () => {
+      disposed = true;
+      unlisteners.forEach((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -196,10 +251,15 @@ export function useVoiceAsk() {
           runId,
           question,
           selectedText: conversationSnapshot.context?.selectedText ?? null,
-          turns: conversationSnapshot.turns.map((turn) => ({
-            question: turn.question,
-            suggestion: turn.suggestion,
-          })),
+          // Coach turns first: they happened before anything asked in this
+          // overlay, and Rust keeps only the last few entries.
+          turns: [
+            ...coachTurnsRef.current,
+            ...conversationSnapshot.turns.map((turn) => ({
+              question: turn.question,
+              suggestion: turn.suggestion,
+            })),
+          ],
           mode: modeRef.current,
         }
       );
@@ -207,6 +267,15 @@ export function useVoiceAsk() {
       await finishRun(runId);
       dispatch({ type: "answered", runId, suggestion, createdAt: Date.now() });
       debugLog(`[voice-ask] answered run=${runId} chars=${suggestion.answer.length}`);
+      // The proactive coach lives in the island window — a separate webview with
+      // its own ContextStore, so it cannot see this by reference. Publish the
+      // answer instead, otherwise the interviewer's follow-up (which the coach
+      // picks up from the transcript) is answered as if this never happened.
+      // Fire-and-forget: a dropped bridge event must not fail the run.
+      void emit(VOICE_ASK_ANSWERED_EVENT, {
+        question,
+        answer: suggestion.answer.slice(0, VOICE_ASK_ANSWER_BRIDGE_CHARS),
+      }).catch(() => undefined);
     } catch (error) {
       if (cancelledRef.current || currentRunRef.current !== runId) return;
       await failRun(runId, `语音提问失败：${errorMessage(error)}`);

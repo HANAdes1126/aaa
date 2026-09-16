@@ -674,7 +674,29 @@ fn resolve_voice_overlay_dimensions(
     // The overlay mirrors the island's zoom so text stays legible together
     // with the rest of the UI on high-DPI or scaled-down setups.
     let scale = crate::appearance::load().ui_scale;
+    resolve_voice_overlay_dimensions_at_scale(
+        presentation,
+        requested_width,
+        requested_height,
+        geometry,
+        scale,
+    )
+}
 
+/// The pure part, with the zoom factor passed in.
+///
+/// Split out because the wrapper above reads the user's saved appearance from
+/// disk: with the zoom folded in, the unit tests below asserted on whatever
+/// `ui_scale` happened to be on the machine running them, so setting the app's
+/// zoom to 0.9 broke the suite (720 * 0.9 = 648). Geometry maths must be
+/// testable without a user profile.
+fn resolve_voice_overlay_dimensions_at_scale(
+    presentation: VoiceOverlayPresentationMode,
+    requested_width: Option<f64>,
+    requested_height: Option<f64>,
+    geometry: Option<CursorMonitorGeometry>,
+    scale: f64,
+) -> VoiceOverlayDimensions {
     if presentation != VoiceOverlayPresentationMode::Expanded {
         return VoiceOverlayDimensions {
             width: requested_width.unwrap_or(COMPACT_OVERLAY_WIDTH) * scale,
@@ -760,6 +782,9 @@ fn activate_voice_overlay_window(
     if presentation != VoiceOverlayPresentationMode::Expanded {
         return Ok(());
     }
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 
     #[cfg(target_os = "macos")]
     {
@@ -1166,7 +1191,7 @@ fn setup_macos_panel(window: &WebviewWindow) {
 mod tests {
     use super::{
         anchored_resize_coordinates, bottom_center_coordinates, clamp_to_logical_monitor,
-        monitor_contains_cursor, resolve_voice_overlay_dimensions, CursorMonitorGeometry,
+        monitor_contains_cursor, resolve_voice_overlay_dimensions_at_scale, CursorMonitorGeometry,
         IslandPresentationMode, VoiceOverlayPlacement, VoiceOverlayPresentationMode,
         COMPACT_OVERLAY_HEIGHT, COMPACT_OVERLAY_WIDTH, ISLAND_MONITOR_MARGIN, MIN_ISLAND_HEIGHT,
         MIN_ISLAND_WIDTH, TOP_OFFSET,
@@ -1348,11 +1373,12 @@ mod tests {
             work_height: 1880,
             scale: 2.0,
         };
-        let dimensions = resolve_voice_overlay_dimensions(
+        let dimensions = resolve_voice_overlay_dimensions_at_scale(
             VoiceOverlayPresentationMode::Expanded,
             None,
             None,
             Some(geometry),
+            1.0,
         );
 
         assert_eq!(dimensions.width, 720.0);
@@ -1377,16 +1403,49 @@ mod tests {
             work_height: 900,
             scale: 2.0,
         };
-        let dimensions = resolve_voice_overlay_dimensions(
+        let dimensions = resolve_voice_overlay_dimensions_at_scale(
             VoiceOverlayPresentationMode::Expanded,
             None,
             None,
             Some(geometry),
+            1.0,
         );
 
         assert_eq!(dimensions.width, 502.0);
         assert_eq!(dimensions.height, 402.0);
         assert_eq!(dimensions.min_width, Some(502.0));
         assert_eq!(dimensions.min_height, Some(402.0));
+    }
+
+    #[test]
+    fn expanded_dimensions_follow_the_ui_zoom() {
+        // The overlay has to zoom with the rest of the UI, and the previous
+        // version of these tests could not see that at all: they read the
+        // real saved zoom, so they silently asserted whatever the developer's
+        // machine happened to be set to.
+        let geometry = CursorMonitorGeometry {
+            source: "test",
+            cursor_x: 100.0,
+            cursor_y: 100.0,
+            monitor_x: 0,
+            monitor_y: 0,
+            monitor_width: 3024,
+            monitor_height: 1964,
+            work_x: 0,
+            work_y: 48,
+            work_width: 3024,
+            work_height: 1880,
+            scale: 2.0,
+        };
+        let dimensions = resolve_voice_overlay_dimensions_at_scale(
+            VoiceOverlayPresentationMode::Expanded,
+            None,
+            None,
+            Some(geometry),
+            0.9,
+        );
+
+        assert_eq!(dimensions.width, 648.0);
+        assert_eq!(dimensions.min_width, Some(504.0));
     }
 }

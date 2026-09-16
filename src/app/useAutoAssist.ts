@@ -52,10 +52,20 @@ export function useAutoAssist(ctx: MeetlyState, session: SessionActions, agent: 
       ctx.setPrefetchStatus("prefetching");
 
       const mode = resolveCoachMode(ctx.sessionKind, ctx.meetingPerspective);
+      // Prefetch fires before the segment reaches the ContextStore, but its
+      // answer is what the coach ends up showing — so it must carry the same
+      // session anchors as the main path, or a Java interview can get a
+      // JavaScript answer. The anchors are prepended to the question text: no
+      // extra request, no extra round trip, no latency.
+      const anchors = agent.sessionAnchors();
+      const question = anchors ? `${anchors}\n\n${candidate.text}` : candidate.text;
+      debugLog(
+        `[prefetch] anchors=${anchors ? anchors.split("\n").length - 1 : 0} candidate=${candidate.id}`
+      );
       const promise = withPrefetchTimeout(
         safeInvoke<AssistantSuggestion>("complete_assistant_with_question", {
           mode,
-          question: candidate.text,
+          question,
           runId,
         })
       )
@@ -104,7 +114,7 @@ export function useAutoAssist(ctx: MeetlyState, session: SessionActions, agent: 
         `[prefetch] start candidate=${candidate.id} confidence=${candidate.confidence.toFixed(2)} chars=${candidate.text.length}`
       );
     },
-    [ctx]
+    [agent, ctx]
   );
 
   const addTranscriptSegment = useCallback(
@@ -132,8 +142,10 @@ export function useAutoAssist(ctx: MeetlyState, session: SessionActions, agent: 
       ctx.setTranscriptError(null);
       ctx.setTranscriptHistory(next.slice(-20));
       session.updateInterviewSession((current) => ({ ...current, transcript: next }));
-      // 先触发推测性预取，再进教练唤醒，让预取请求尽量提前派发；
+      // 先把本段的长程事实抽取进记忆（纯 CPU），再触发推测性预取——
+      // 这样预取请求也能带上本场面试的语言/技术栈锚点，最后才进教练唤醒。
       // 教练 transport 会优先复用已就绪/在途的预取结果。
+      agent.primeSessionFacts(normalizedSegment);
       maybePrefetch(normalizedSegment, priorHistory);
       agent.pushTranscriptFinal(normalizedSegment);
     },

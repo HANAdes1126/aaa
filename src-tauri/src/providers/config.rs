@@ -50,8 +50,32 @@ pub struct ProviderConfig {
     pub provider_id: ProviderId,
     pub base_url: String,
     pub model: String,
+    /// Model used for screenshot analysis, when it should differ from `model`.
+    ///
+    /// Vision and live coaching pull in opposite directions: the coach needs an
+    /// answer inside ~3s and runs dozens of times per interview, while a
+    /// screenshot is a single deliberate action where the user will happily
+    /// wait for a stronger model to read the question correctly. Keeping one
+    /// field for both forced a compromise that was wrong for one of them.
+    ///
+    /// `None` (or blank) means "use `model`", so existing configs keep working
+    /// untouched and nobody has to fill this in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vision_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mmproj_path: Option<String>,
+}
+
+impl ProviderConfig {
+    /// The model to use for image input. Falls back to the text model so an
+    /// unset (or accidentally blanked) value can never break screenshots.
+    pub fn effective_vision_model(&self) -> &str {
+        self.vision_model
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(&self.model)
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -107,6 +131,7 @@ pub fn default_stt_config() -> ProviderConfig {
         provider_id: ProviderId::OpenAiCompatible,
         base_url: "https://api.siliconflow.cn/v1/audio/transcriptions".to_string(),
         model: "FunAudioLLM/SenseVoiceSmall".to_string(),
+        vision_model: None,
         mmproj_path: None,
     }
 }
@@ -116,6 +141,7 @@ pub fn default_llm_config() -> ProviderConfig {
         provider_id: ProviderId::OpenAiCompatible,
         base_url: "https://api.siliconflow.cn/v1/chat/completions".to_string(),
         model: "Qwen/Qwen3-32B".to_string(),
+        vision_model: None,
         mmproj_path: None,
     }
 }
@@ -181,5 +207,28 @@ mod tests {
         let value = serde_json::to_value(default_stt_config()).unwrap();
         assert_eq!(value["providerId"], "openai_compatible");
         assert!(value.get("baseUrl").is_some());
+    }
+
+    #[test]
+    fn vision_model_falls_back_to_the_text_model() {
+        // Screenshots must never break just because the override is unset or
+        // got blanked out in the form — silently reusing `model` keeps the
+        // feature working for everyone who does not care about this field.
+        let mut config = default_llm_config();
+        assert_eq!(config.effective_vision_model(), config.model);
+
+        config.vision_model = Some("   ".to_string());
+        assert_eq!(config.effective_vision_model(), config.model);
+
+        config.vision_model = Some(" claude-opus-5 ".to_string());
+        assert_eq!(config.effective_vision_model(), "claude-opus-5");
+    }
+
+    #[test]
+    fn vision_model_is_omitted_when_unset() {
+        // The field is additive: an old config file has no `visionModel`, and a
+        // new one must not grow a null that older builds would reject.
+        let value = serde_json::to_value(default_llm_config()).unwrap();
+        assert!(value.get("visionModel").is_none());
     }
 }

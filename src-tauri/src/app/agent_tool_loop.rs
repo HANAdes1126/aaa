@@ -1,5 +1,9 @@
 use crate::providers::config::{ProviderId, ProviderKind};
-use crate::providers::llm::{parse_suggestion, AssistantSuggestion, ChatMessage, ChatRole};
+use crate::providers::llm::{
+    llm_http_client, non_stream_known_unsupported, parse_suggestion, remember_non_stream_rejected,
+    AssistantSuggestion, ChatMessage, ChatRole, LLM_FIRST_BYTE_TIMEOUT,
+    LLM_NON_STREAM_TOTAL_TIMEOUT, LLM_STREAM_IDLE_TIMEOUT,
+};
 use crate::providers::{credentials, web};
 use futures_util::StreamExt;
 use reqwest::StatusCode;
@@ -12,6 +16,28 @@ const DEFAULT_SEARCH_LIMIT: u8 = 3;
 const MAX_SEARCH_QUERY_CHARS: usize = 300;
 const CURRENT_INFORMATION_FRESHNESS_DAYS: u16 = 14;
 const MAX_LOG_CONTENT_CHARS: usize = 2_000;
+
+/// Wall-clock cap for one whole agent run. Every individual request is already
+/// bounded by the LLM connect/first-byte/idle timeouts, but a run can chain up
+/// to `MAX_AGENT_STEPS` of them, and several slow steps in a row would still
+/// add up to a minute of silence with no way to tell a stall from progress.
+///
+/// Sized above the per-request idle budget (90s), otherwise this cap would be
+/// the thing that kills a slow reasoning model and the inner timeout would
+/// never get a say.
+const AGENT_LOOP_TOTAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(150);
+
+
+/// Vision sends a base64 screenshot, so the upload alone is slower than text.
+/// Still capped: a stall here leaves the panel stuck on "分析中" forever.
+///
+/// A screenshot coding question is by far the slowest thing this app does, and
+/// also the one the user is willing to wait for — it is a deliberate keypress,
+/// not a live coach turn. Measured 2026-09-12 on a real 523KB screenshot, run
+/// serially: deepseek-v4-pro 15.3s, claude-opus-5 65.9s with the first byte
+/// only arriving at 48s. The budget must clear the slowest model a user would
+/// deliberately choose, otherwise choosing it silently never works.
+const AGENT_VISION_TOTAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
 /// Below this user-message character count we skip the web_search tool loop
 /// entirely. Voice queries are short and live, so paying a 1-3s tool round
 /// trip for a 1-2 sentence answer is the wrong trade. Tuned for Chinese
@@ -227,6 +253,35 @@ pub(crate) async fn complete(
     system_prompt: String,
     messages: Vec<ChatMessage>,
 ) -> Result<AssistantSuggestion, String> {
+    match tokio::time::timeout(
+        AGENT_LOOP_TOTAL_TIMEOUT,
+        run_agent_loop(app, workflow, trace_id, system_prompt, messages),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            let _ = crate::debug_log::append(&format!(
+                "[agent-tool-loop] run timed out workflow={} timeout_s={}",
+                workflow.as_str(),
+                AGENT_LOOP_TOTAL_TIMEOUT.as_secs()
+            ));
+            Err(format!(
+                "{} 超过 {} 秒仍未完成，已放弃本轮请求。",
+                workflow.display_name(),
+                AGENT_LOOP_TOTAL_TIMEOUT.as_secs()
+            ))
+        }
+    }
+}
+
+async fn run_agent_loop(
+    app: &AppHandle,
+    workflow: AgentWorkflow,
+    trace_id: Option<String>,
+    system_prompt: String,
+    messages: Vec<ChatMessage>,
+) -> Result<AssistantSuggestion, String> {
     let credentials =
         credentials::resolve(app, ProviderKind::Llm).map_err(|error| error.to_string())?;
     if credentials.provider_id != ProviderId::OpenAiCompatible {
@@ -242,6 +297,9 @@ pub(crate) async fn complete(
     let registered = registered_tools(app);
     let search_policy = SearchPolicy::from_messages(&messages);
     let user_query_chars = last_user_message_chars(&messages);
+    // Captured before `messages` is consumed below: the design-shape guard at
+    // the end of the loop needs the question, not just its length.
+    let user_question = last_user_message(&messages).to_string();
     let short_query = user_query_chars < SHORT_QUERY_SKIP_TOOLS_CHARS;
     // Short voice queries don't earn a 1-3s web_search round trip. The model
     // can answer a 1-2 sentence ask in well under 1s with the voice tuning;
@@ -301,7 +359,7 @@ pub(crate) async fn complete(
             .map_err(|error| error.to_string())?,
     );
 
-    let client = reqwest::Client::new();
+    let client = llm_http_client();
     let mut search_calls = 0;
 
     for step in 0..MAX_AGENT_STEPS {
@@ -364,7 +422,10 @@ pub(crate) async fn complete(
                 step + 1,
                 search_calls
             ));
-            return Ok(parse_suggestion(&content));
+            return Ok(enforce_design_answer_shape(
+                &user_question,
+                parse_suggestion(&content),
+            ));
         }
 
         request_messages.push(json!({
@@ -467,6 +528,129 @@ fn last_user_message_chars(messages: &[ChatMessage]) -> usize {
         .unwrap_or(0)
 }
 
+fn last_user_message(messages: &[ChatMessage]) -> &str {
+    messages
+        .iter()
+        .rev()
+        .find(|message| message.role == ChatRole::User)
+        .map(|message| message.content.as_str())
+        .unwrap_or("")
+}
+
+/// Phrases that mean "describe the shape", not "type an implementation".
+///
+/// A design round asks how the data is laid out, which tables exist, what the
+/// endpoints are. The expected answer is spoken. Code is not a bonus here — it
+/// is the wrong artefact, and on a shared screen during a live interview a
+/// sudden Java class is the most obvious tell there is.
+const DESIGN_QUESTION_MARKERS: [&str; 12] = [
+    "怎么设计",
+    "如何设计",
+    "怎么去设计",
+    "设计一个",
+    "设计一下",
+    "架构",
+    "数据结构，表",
+    "表怎么",
+    "表结构",
+    "接口怎么",
+    "存储怎么",
+    "方案",
+];
+
+/// Phrases that override the above: the interviewer explicitly wants code.
+///
+/// Checked second and given priority, because "设计一个 LRU 并手写出来" is a
+/// coding question wearing a design question's clothes. Suppressing code there
+/// would be a worse failure than the one being fixed.
+const EXPLICIT_CODE_MARKERS: [&str; 10] = [
+    "手撕",
+    "手写",
+    "写一下",
+    "写出来",
+    "实现一个",
+    "用代码",
+    "代码实现",
+    "白板",
+    "coding",
+    "leetcode",
+];
+
+/// True when the interviewer asked for a design and the model answered with a
+/// code block anyway.
+///
+/// The prompt already states the rule, but a prompt is a request: measured
+/// 2026-09-13, the classifier still emitted `coding` for a distributed lottery
+/// design question in roughly 5% of samples, and the code it produced claimed
+/// O(1) while scanning the whole map and reached for `synchronized` to solve a
+/// distributed race. Frequency is low; the cost when it fires is the candidate
+/// reading single-machine Java aloud in a system-design round.
+fn design_answer_should_not_contain_code(question: &str, answer: &str) -> bool {
+    if !answer.contains("```") {
+        return false;
+    }
+    let lowered = question.to_lowercase();
+    if EXPLICIT_CODE_MARKERS
+        .iter()
+        .any(|marker| lowered.contains(marker))
+    {
+        return false;
+    }
+    DESIGN_QUESTION_MARKERS
+        .iter()
+        .any(|marker| question.contains(marker))
+}
+
+/// Removes fenced code blocks from a design answer, keeping the prose.
+///
+/// Dropping the block rather than the whole answer is deliberate: the spoken
+/// part is usually correct and useful, and blanking it would turn a cosmetic
+/// failure into "the coach said nothing". If stripping leaves nothing to say,
+/// the original is returned untouched — a flawed answer still beats silence.
+fn strip_code_blocks(answer: &str) -> String {
+    let mut kept = String::with_capacity(answer.len());
+    let mut inside = false;
+    for line in answer.lines() {
+        if line.trim_start().starts_with("```") {
+            inside = !inside;
+            continue;
+        }
+        if !inside {
+            kept.push_str(line);
+            kept.push('\n');
+        }
+    }
+    let trimmed = kept.trim();
+    if trimmed.is_empty() {
+        answer.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Last line of defence for the design-question-answered-with-code case.
+fn enforce_design_answer_shape(
+    question: &str,
+    mut suggestion: AssistantSuggestion,
+) -> AssistantSuggestion {
+    if !design_answer_should_not_contain_code(question, &suggestion.answer) {
+        return suggestion;
+    }
+    let stripped = strip_code_blocks(&suggestion.answer);
+    let _ = crate::debug_log::append(&format!(
+        "[agent-llm] design question answered with code; stripped block kind={} before={} after={}",
+        suggestion.kind,
+        suggestion.answer.chars().count(),
+        stripped.chars().count()
+    ));
+    suggestion.answer = stripped;
+    // The block is gone, but the original question is still a design task.
+    // Leaving kind="coding" would render a code card; collapsing to knowledge
+    // would hide the visible 3-5 point design-outline semantics.
+    suggestion.kind = crate::providers::llm::KIND_DESIGN.to_string();
+    suggestion
+}
+
 /// Runs a single vision completion: sends a screenshot (base64 JPEG) together
 /// with a user question to the configured OpenAI-compatible endpoint, reusing
 /// the same 11101 streaming fallback as the text tool loop. No tool registry
@@ -501,23 +685,36 @@ pub(crate) async fn complete_vision(
 
     let _ = crate::debug_log::append(&format!(
         "[agent-vision] run start model={} image_chars={} question_chars={}",
-        safe_log_text(&credentials.model, 120),
+        safe_log_text(&credentials.vision_model, 120),
         image_base64.len(),
         question.chars().count()
     ));
 
-    let client = reqwest::Client::new();
-    let response = request_completion(
-        &client,
-        &credentials.base_url,
-        &credentials.api_key,
-        &credentials.model,
-        &request_messages,
-        &[],
-        false,
-        &CompletionTuning::default_text(),
+    let client = llm_http_client();
+    let response = tokio::time::timeout(
+        AGENT_VISION_TOTAL_TIMEOUT,
+        request_completion(
+            &client,
+            &credentials.base_url,
+            &credentials.api_key,
+            &credentials.vision_model,
+            &request_messages,
+            &[],
+            false,
+            &CompletionTuning::default_text(),
+        ),
     )
     .await
+    .map_err(|_| {
+        let _ = crate::debug_log::append(&format!(
+            "[agent-vision] run timed out timeout_s={}",
+            AGENT_VISION_TOTAL_TIMEOUT.as_secs()
+        ));
+        format!(
+            "图片分析超过 {} 秒未完成，已放弃本轮请求。",
+            AGENT_VISION_TOTAL_TIMEOUT.as_secs()
+        )
+    })?
     .map_err(|error| {
         let _ = crate::debug_log::append(&format!(
             "[agent-vision] run failed error={}",
@@ -562,24 +759,46 @@ async fn request_completion(
     // server gives us SSE deltas. For text the legacy path is kept (non-stream
     // first, with a tight 11101 fallback) to preserve the existing behaviour
     // for prefetch / vision callers.
-    if tuning.stream {
+    //
+    // …unless this endpoint has already told us it does not do non-streaming.
+    // Probing it again would add a full round trip (~1s measured) to every
+    // screenshot and prefetch for a result we already know.
+    if tuning.stream || non_stream_known_unsupported(base_url) {
+        if !tuning.stream {
+            body["stream"] = json!(true);
+        }
         return request_streaming_completion(client, base_url, api_key, &body, started_at, model)
             .await;
     }
 
-    let response = client
-        .post(base_url)
-        .bearer_auth(api_key)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|error| error.to_string())?;
+    // Non-streaming replies arrive whole, so the whole wait can be capped.
+    // Streaming replies cannot (a long answer would be cut off) — they are
+    // bounded per chunk further down instead.
+    let response = tokio::time::timeout(
+        LLM_NON_STREAM_TOTAL_TIMEOUT,
+        client.post(base_url).bearer_auth(api_key).json(&body).send(),
+    )
+    .await
+    .map_err(|_| {
+        log_request_timing(model, started_at, None, "non_stream_timeout");
+        format!(
+            "LLM 请求等待响应超过 {} 秒，已放弃。",
+            LLM_NON_STREAM_TOTAL_TIMEOUT.as_secs()
+        )
+    })?
+    .map_err(|error| error.to_string())?;
     let status = response.status();
     if status.is_success() {
-        let response = response
-            .json::<CompletionResponse>()
-            .await
-            .map_err(|error| error.to_string())?;
+        let response = tokio::time::timeout(
+            LLM_NON_STREAM_TOTAL_TIMEOUT,
+            response.json::<CompletionResponse>(),
+        )
+        .await
+        .map_err(|_| {
+            log_request_timing(model, started_at, None, "non_stream_body_timeout");
+            "LLM 响应读取超时。".to_string()
+        })?
+        .map_err(|error| error.to_string())?;
         log_request_timing(model, started_at, None, "non_stream_ok");
         return Ok(response);
     }
@@ -590,9 +809,11 @@ async fn request_completion(
     // here; otherwise the UI bypasses the adapter's stream fallback entirely.
     if requires_streaming_retry(status, &error_body) {
         let _ = crate::debug_log::append(
-            "[agent-llm] non-stream request rejected with 11101; retrying stream",
+            "[agent-llm] non-stream request rejected with 11101; retrying stream (skipping the probe from now on)",
         );
         log_request_timing(model, started_at, None, "non_stream_11101_fallback");
+        // Pay this round trip once per endpoint, not once per request.
+        remember_non_stream_rejected(base_url);
         body["stream"] = json!(true);
         return request_streaming_completion(client, base_url, api_key, &body, started_at, model)
             .await;
@@ -633,12 +854,37 @@ async fn request_streaming_completion(
     let mut bytes = response.bytes_stream();
     let mut payload = String::new();
     let mut first_byte_at: Option<u64> = None;
-    while let Some(chunk) = bytes.next().await {
-        let chunk = chunk.map_err(|error| error.to_string())?;
-        if first_byte_at.is_none() {
-            first_byte_at = Some(unix_time_ms());
+    loop {
+        // Tighter budget before the first byte than between chunks: a model
+        // that accepted the request and then never emits is the failure this
+        // guard exists for, and it is invisible without a clock on the read.
+        let budget = if first_byte_at.is_none() {
+            LLM_FIRST_BYTE_TIMEOUT
+        } else {
+            LLM_STREAM_IDLE_TIMEOUT
+        };
+        match tokio::time::timeout(budget, bytes.next()).await {
+            Ok(Some(chunk)) => {
+                let chunk = chunk.map_err(|error| error.to_string())?;
+                if first_byte_at.is_none() {
+                    first_byte_at = Some(unix_time_ms());
+                }
+                payload.push_str(&String::from_utf8_lossy(&chunk));
+            }
+            Ok(None) => break,
+            Err(_) => {
+                log_request_timing(model, started_at, first_byte_at, "stream_timeout");
+                let _ = crate::debug_log::append(&format!(
+                    "[agent-llm] stream stalled elapsed_ms={} saw_first_byte={}",
+                    unix_time_ms().saturating_sub(started_at),
+                    first_byte_at.is_some()
+                ));
+                return Err(format!(
+                    "LLM 响应流中断：等待超过 {} 秒没有新数据。",
+                    budget.as_secs()
+                ));
+            }
         }
-        payload.push_str(&String::from_utf8_lossy(&chunk));
     }
     let result = completion_from_sse(&payload);
     log_request_timing(model, started_at, first_byte_at, "stream_ok");
@@ -1165,6 +1411,79 @@ fn normalize_for_overlap(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn suggestion_with(answer: &str, kind: &str) -> AssistantSuggestion {
+        AssistantSuggestion {
+            kind: kind.to_string(),
+            answer: answer.to_string(),
+            bullets: Vec::new(),
+            clarifying_question: None,
+        }
+    }
+
+    const CODE_ANSWER: &str = "用 Redis 扣库存。\n```java\npublic class A {\n    int x;\n}\n```";
+
+    #[test]
+    fn design_question_answered_with_code_gets_the_code_stripped() {
+        // The failure this exists for: the interviewer asked how to lay the
+        // system out and the model replied with a single-machine Java class.
+        let result = enforce_design_answer_shape(
+            "给你1000个人抢100个奖品，请问你怎么去设计数据结构，表格，和接口啥的",
+            suggestion_with(CODE_ANSWER, "coding"),
+        );
+        assert!(!result.answer.contains("```"));
+        assert!(result.answer.contains("用 Redis 扣库存"));
+        // Without this the UI keeps rendering it as a code card; `design`
+        // preserves the visible outline semantics for the surviving prose.
+        assert_eq!(result.kind, "design");
+    }
+
+    #[test]
+    fn explicit_code_request_keeps_its_code() {
+        // "设计一个 LRU 并手写出来" is a coding question in design clothing.
+        // Suppressing code here would be worse than the bug being fixed.
+        for question in [
+            "设计一个 LRU 缓存并手写出来",
+            "来手写一个快速排序吧",
+            "用代码实现一下这个限流器",
+        ] {
+            let result =
+                enforce_design_answer_shape(question, suggestion_with(CODE_ANSWER, "coding"));
+            assert!(
+                result.answer.contains("```"),
+                "code must survive for: {question}"
+            );
+            assert_eq!(result.kind, "coding");
+        }
+    }
+
+    #[test]
+    fn answers_without_code_are_untouched() {
+        let plain = suggestion_with("三张表，用 Redis 原子扣减。", "knowledge");
+        let result = enforce_design_answer_shape("你怎么设计这个抽奖系统", plain);
+        assert_eq!(result.answer, "三张表，用 Redis 原子扣减。");
+        assert_eq!(result.kind, "knowledge");
+    }
+
+    #[test]
+    fn stripping_never_produces_an_empty_answer() {
+        // A silent coach is worse than a flawed one, so a code-only answer is
+        // left alone rather than blanked.
+        let only_code = suggestion_with("```java\nint x = 1;\n```", "coding");
+        let result = enforce_design_answer_shape("你怎么设计存储", only_code);
+        assert!(result.answer.contains("int x = 1"));
+    }
+
+    #[test]
+    fn non_design_questions_keep_code_even_when_unusual() {
+        // Nothing in "说说 HashMap 的底层结构" marks it as a design question,
+        // so the guard must not fire — it only owns the design case.
+        let result = enforce_design_answer_shape(
+            "说说 HashMap 的底层结构",
+            suggestion_with(CODE_ANSWER, "coding"),
+        );
+        assert!(result.answer.contains("```"));
+    }
 
     #[test]
     fn parses_and_bounds_search_arguments() {

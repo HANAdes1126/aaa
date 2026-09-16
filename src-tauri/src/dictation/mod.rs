@@ -17,6 +17,30 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 const ESCAPE_SHORTCUT: &str = "Escape";
 
+/// macOS gates synthetic paste behind the Accessibility permission. Windows
+/// has no equivalent gate, so the check is trivially satisfied there and the
+/// "open settings" command is a no-op instead of an error — otherwise the
+/// settings UI would show a permanent, unfixable permission warning.
+#[cfg(target_os = "macos")]
+pub(crate) fn accessibility_granted() -> bool {
+    handy_keys::check_accessibility()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn accessibility_granted() -> bool {
+    true
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn open_accessibility_settings() -> Result<(), String> {
+    handy_keys::open_accessibility_settings().map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn open_accessibility_settings() -> Result<(), String> {
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 struct ActiveRun {
     id: String,
@@ -439,7 +463,7 @@ pub fn get_dictation_status(state: tauri::State<DictationState>) -> DictationSta
     DictationStatus {
         settings: state.settings(),
         active,
-        accessibility_granted: handy_keys::check_accessibility(),
+        accessibility_granted: accessibility_granted(),
         microphone_permission: microphone_permission(),
         shortcut_backend: status
             .as_ref()
@@ -469,7 +493,7 @@ pub fn save_dictation_settings(
 
 #[tauri::command]
 pub fn request_dictation_accessibility() -> Result<(), String> {
-    handy_keys::open_accessibility_settings().map_err(|error| error.to_string())
+    open_accessibility_settings()
 }
 
 #[tauri::command]

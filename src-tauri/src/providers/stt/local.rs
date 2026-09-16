@@ -1,8 +1,10 @@
 use super::audio_normalization::normalize_to_wav_16k_mono;
+use super::text_guard;
 use super::{AsrCapabilities, AsrExecutionMode, BatchAsrRequest, SttProvider};
 use crate::providers::config::{ProviderConfig, ProviderId};
 use crate::providers::error::{ProviderFailure, ProviderFailureKind, ProviderResult};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use futures_util::StreamExt;
 use serde_json::{json, Value};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
@@ -149,28 +151,17 @@ impl SttProvider for LocalQwen3AsrStt {
     async fn transcribe(&self, request: BatchAsrRequest) -> ProviderResult<String> {
         self.ensure_server().await?;
 
+        let source_rate = wav_header_rate(&request.audio_bytes);
         let wav = normalize_to_wav_16k_mono(request)
             .map_err(|error| ProviderFailure::invalid_request(self.id(), error.to_string()))?;
+        let _ = crate::debug_log::append(&format!(
+            "[stt] request source_rate={:?} normalized_bytes={}",
+            source_rate,
+            wav.len()
+        ));
+        crate::debug_log::dump_stt_audio("norm", 16_000, &wav);
         let audio_base64 = BASE64.encode(wav);
-
-        let body = json!({
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "请转写这段音频，只输出转写文本，不要任何解释。"
-                    },
-                    {
-                        "type": "input_audio",
-                        "input_audio": { "data": audio_base64, "format": "wav" }
-                    }
-                ]
-            }],
-            "max_tokens": 256,
-            "temperature": 0,
-            "stream": false
-        });
+        let body = asr_request_body(&audio_base64, false);
 
         let response = self
             .client
@@ -191,8 +182,148 @@ impl SttProvider for LocalQwen3AsrStt {
             .await
             .map_err(|error| ProviderFailure::invalid_response(self.id(), error.to_string()))?;
         let raw = parse_content(&value).map_err(|message| ProviderFailure::invalid_response(self.id(), message))?;
-        Ok(clean_transcript(&raw))
+        Ok(finalize_transcript(&raw, true))
     }
+
+    async fn transcribe_streaming(
+        &self,
+        request: BatchAsrRequest,
+        mut on_delta: Box<dyn FnMut(String) + Send>,
+    ) -> ProviderResult<String> {
+        self.ensure_server().await?;
+
+        let source_rate = wav_header_rate(&request.audio_bytes);
+        let wav = normalize_to_wav_16k_mono(request)
+            .map_err(|error| ProviderFailure::invalid_request(self.id(), error.to_string()))?;
+        let _ = crate::debug_log::append(&format!(
+            "[stt] request source_rate={:?} normalized_bytes={}",
+            source_rate,
+            wav.len()
+        ));
+        crate::debug_log::dump_stt_audio("norm", 16_000, &wav);
+        let audio_base64 = BASE64.encode(wav);
+        let body = asr_request_body(&audio_base64, true);
+
+        let response = self
+            .client
+            .post(format!("{}/v1/chat/completions", self.base_url))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|error| ProviderFailure::transport(self.id(), error))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_body = response.text().await.unwrap_or_default();
+            return Err(ProviderFailure::http(self.id(), status, &error_body));
+        }
+
+        let mut stream = response.bytes_stream();
+        let mut accumulated = String::new();
+        let mut line_buffer = String::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk
+                .map_err(|error| ProviderFailure::transport(self.id(), error))?;
+            line_buffer.push_str(&String::from_utf8_lossy(&chunk));
+            while let Some(newline) = line_buffer.find('\n') {
+                let line = line_buffer[..newline].to_string();
+                line_buffer = line_buffer[newline + 1..].to_string();
+                if let Some(delta) = parse_sse_delta(&line) {
+                    accumulated.push_str(&delta);
+                    on_delta(finalize_transcript(&accumulated, false));
+                }
+            }
+        }
+
+        // An empty accumulator is normal: VAD segments often contain only
+        // silence/no-speech frames, so llama-server legitimately returns no
+        // tokens. Surface that to callers as `Ok("")` rather than a hard
+        // failure so the upstream pipeline can drop the empty segment instead
+        // of treating every silence as a transcript error.
+        Ok(finalize_transcript(&accumulated, true))
+    }
+}
+
+/// Builds the llama-server chat-completions body for one audio chunk.
+///
+/// `temperature: 0` (greedy) is what makes transcription deterministic, but it
+/// also means the decoder cannot escape a loop once it enters one: on audio it
+/// cannot parse it repeats the same tokens until `max_tokens` runs out. llama-
+/// server starts with every repetition penalty disabled, so we turn them on
+/// explicitly. Measured on real speech: no change in output, and the loop
+/// becomes far harder to enter.
+/// Reads the sample rate out of a PCM WAV header so the dump can show what the
+/// capture rate actually was, not just the 16 kHz we normalized down to.
+fn wav_header_rate(wav: &[u8]) -> Option<u32> {
+    let bytes = wav.get(24..28)?;
+    Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+fn asr_request_body(audio_base64: &str, stream: bool) -> Value {
+    json!({
+        "messages": [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "请转写这段音频，只输出转写文本，不要任何解释。"
+                },
+                {
+                    "type": "input_audio",
+                    "input_audio": { "data": audio_base64, "format": "wav" }
+                }
+            ]
+        }],
+        "max_tokens": 256,
+        "temperature": 0,
+        // Mild: enough to break a loop, low enough not to punish legitimate
+        // repetition in speech ("这个这个", "对对对").
+        "repeat_penalty": 1.1,
+        // DRY (llama.cpp): penalises continuing a token sequence that already
+        // appeared, which is the actual shape of a decode loop.
+        "dry_multiplier": 0.8,
+        "dry_base": 1.75,
+        "dry_allowed_length": 2,
+        "stream": stream
+    })
+}
+
+/// Cleans the model markup and drops decode loops.
+///
+/// `log` is false for streaming partials (a loop would otherwise be logged on
+/// every token) and true for the final result.
+fn finalize_transcript(raw: &str, log: bool) -> String {
+    let text = clean_transcript(raw);
+    if text.is_empty() {
+        return String::new();
+    }
+    if text_guard::is_degenerate(&text) {
+        if log {
+            let _ = crate::debug_log::append(&format!(
+                "[stt] dropped degenerate transcript len={} ratio={:.2}",
+                text.chars().count(),
+                text_guard::repetition_ratio(&text)
+            ));
+        }
+        return String::new();
+    }
+    text
+}
+
+/// Extracts `choices[0].delta.content` from a single SSE `data:` line, if any.
+fn parse_sse_delta(line: &str) -> Option<String> {
+    let data = line.trim_start().strip_prefix("data:")?.trim();
+    if data.is_empty() || data == "[DONE]" {
+        return None;
+    }
+    let event: Value = serde_json::from_str(data).ok()?;
+    event
+        .get("choices")
+        .and_then(|choices| choices.get(0))
+        .and_then(|choice| choice.get("delta"))
+        .and_then(|delta| delta.get("content"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 fn parse_content(body: &Value) -> Result<String, &'static str> {
@@ -205,16 +336,24 @@ fn parse_content(body: &Value) -> Result<String, &'static str> {
         .ok_or("llama-server 响应缺少 choices[0].message.content")
 }
 
-/// Qwen3-ASR emits `language Chinese<asr_text>你好...</asr_text>`. Strip the
-/// markup and return the bare transcript.
+/// Qwen3-ASR emits `language Chinese<asr_text>你好...`. Verified against the
+/// live llama-server: this model does NOT emit a closing `</asr_text>` tag —
+/// both streaming and batch responses end right after the transcript text. So
+/// the contract is: everything after `<asr_text>` IS the transcript.
+///
+/// Before `<asr_text>` appears the model may stream a `language Chinese`
+/// prefix; return an empty string there so that prefix never leaks into the
+/// UI as partial text.
 fn clean_transcript(raw: &str) -> String {
     if let Some(start) = raw.find("<asr_text>") {
         let after = &raw[start + "<asr_text>".len()..];
+        // Some Qwen3-ASR variants DO emit a closing tag; trim to it when present.
         if let Some(end) = after.find("</asr_text>") {
             return after[..end].trim().to_string();
         }
+        return after.trim().to_string();
     }
-    raw.trim().to_string()
+    String::new()
 }
 
 /// Resolve the llama-server executable: env override, then known install
@@ -264,13 +403,43 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_raw_when_no_markup() {
-        assert_eq!(clean_transcript("你好世界"), "你好世界");
+    fn suppresses_language_prefix_before_asr_text() {
+        assert_eq!(clean_transcript("language Chinese"), "");
+    }
+
+    #[test]
+    fn extracts_transcript_without_closing_tag() {
+        // The live Qwen3-ASR 1.7B model does NOT emit `</asr_text>`.
+        assert_eq!(
+            clean_transcript("language Chinese<asr_text>你好，我是来面试的候选人。"),
+            "你好，我是来面试的候选人。"
+        );
+    }
+
+    #[test]
+    fn trims_to_closing_tag_when_present() {
+        assert_eq!(
+            clean_transcript("language Chinese<asr_text>你好。</asr_text> 尾部"),
+            "你好。"
+        );
     }
 
     #[test]
     fn parses_chat_completions_content() {
         let body = json!({"choices": [{"message": {"content": "你好"}}]});
         assert_eq!(parse_content(&body), Ok("你好".to_string()));
+    }
+
+    #[test]
+    fn parses_sse_delta_content() {
+        assert_eq!(
+            parse_sse_delta("data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}"),
+            Some("你好".to_string())
+        );
+        assert_eq!(
+            parse_sse_delta("data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}"),
+            None
+        );
+        assert_eq!(parse_sse_delta("data: [DONE]"), None);
     }
 }

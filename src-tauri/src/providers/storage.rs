@@ -20,6 +20,10 @@ struct StoredProviderConfig {
     provider_id: Option<ProviderId>,
     base_url: String,
     model: String,
+    /// Absent in every config written before 2026-09-12; `None` then means
+    /// "use `model`", so upgrading never needs a migration step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    vision_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mmproj_path: Option<String>,
 }
@@ -33,6 +37,7 @@ impl StoredProviderConfig {
             provider_id,
             base_url: self.base_url,
             model: self.model,
+            vision_model: self.vision_model,
             mmproj_path: self.mmproj_path,
         }
     }
@@ -44,6 +49,7 @@ impl From<ProviderConfig> for StoredProviderConfig {
             provider_id: Some(config.provider_id),
             base_url: config.base_url,
             model: config.model,
+            vision_model: config.vision_model,
             mmproj_path: config.mmproj_path,
         }
     }
@@ -124,6 +130,7 @@ mod tests {
             provider_id: ProviderId::XiaomiMimo,
             base_url: "https://api.xiaomimimo.com/v1/chat/completions".to_string(),
             model: "mimo-v2.5-asr".to_string(),
+            vision_model: None,
             mmproj_path: None,
         });
         let json = serde_json::to_value(stored).unwrap();

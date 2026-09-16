@@ -6,7 +6,7 @@ use cidre::{arc, av, cat, cf, core_audio as ca, ns, os};
 use futures_util::task::AtomicWaker;
 use futures_util::Stream;
 use ringbuf::{traits::Split, HeapCons, HeapProd, HeapRb};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 
@@ -40,11 +40,39 @@ pub struct SpeakerStream {
     current_sample_rate: u32,
     sample_rate_probe_counter: u32,
     buffer_rate: u32,
+    /// Shared view of the rate the tap is *actually* producing right now.
+    ///
+    /// The rate is not stable for the lifetime of a session: joining a meeting
+    /// makes the conferencing app reconfigure the output device (48 kHz ->
+    /// 16 kHz telephony quality is common), and the tap follows it. Anything
+    /// that encodes audio downstream must read this rather than caching the
+    /// rate observed at stream creation, or the WAV header ends up describing
+    /// a different rate than the samples carry — which makes the ASR hear
+    /// time-stretched gibberish and answer with pure language-model invention.
+    ///
+    /// In practice `asbd()` keeps reporting the *nominal* rate after the
+    /// device has already switched, so this cannot be trusted on its own and
+    /// the capture loop cross-checks it against measured throughput.
+    live_rate: Arc<AtomicU32>,
+    dropped_samples: Arc<AtomicUsize>,
 }
 
 impl SpeakerStream {
     pub fn sample_rate(&self) -> u32 {
         self.buffer_rate
+    }
+
+    /// Samples lost to ring-buffer overrun. A non-zero count means the
+    /// consumer is behind, so a throughput measurement taken in that window
+    /// under-reports the true capture rate and must not be used to calibrate.
+    pub fn dropped_samples(&self) -> Arc<AtomicUsize> {
+        Arc::clone(&self.dropped_samples)
+    }
+
+    /// Handle tracking the live capture rate. Clone it before the stream is
+    /// moved into the capture task.
+    pub fn live_rate(&self) -> Arc<AtomicU32> {
+        Arc::clone(&self.live_rate)
     }
 }
 
@@ -55,6 +83,12 @@ struct CaptureContext {
     wake_pending: Arc<AtomicBool>,
     dropped_samples: Arc<AtomicUsize>,
     conversion_buffer: Vec<f32>,
+    /// Channels in the tap's interleaved stream. The tap follows the output
+    /// device, which is usually stereo; every sample is pushed to a mono ring
+    /// buffer, so feeding an interleaved stereo stream through unchanged both
+    /// doubles the apparent sample rate and interleaves two signals into the
+    /// one track the ASR listens to.
+    channels: usize,
 }
 
 impl SpeakerInput {
@@ -126,7 +160,12 @@ impl SpeakerInput {
         let waker = Arc::new(AtomicWaker::new());
         let wake_pending = Arc::new(AtomicBool::new(false));
         let current_sample_rate = asbd.sample_rate as u32;
+        let channels = (asbd.channels_per_frame as usize).max(1);
         let dropped_samples = Arc::new(AtomicUsize::new(0));
+        let live_rate = Arc::new(AtomicU32::new(current_sample_rate));
+        let _ = crate::debug_log::append(&format!(
+            "[audio] tap format rate={current_sample_rate} channels={channels} common={common_format:?}"
+        ));
 
         let mut context = Box::new(CaptureContext {
             common_format,
@@ -135,19 +174,22 @@ impl SpeakerInput {
             wake_pending: wake_pending.clone(),
             dropped_samples: dropped_samples.clone(),
             conversion_buffer: vec![0.0; rt_ring::DEFAULT_SCRATCH_LEN],
+            channels,
         });
 
         let device = self.start_device(&mut context)?;
 
         Ok(SpeakerStream {
             reader: RingbufAsyncReader::new(consumer, waker, wake_pending, vec![0.0; CHUNK_SIZE])
-                .with_dropped_samples(dropped_samples),
+                .with_dropped_samples(dropped_samples.clone()),
             _device: device,
             _context: context,
             _tap: self.tap,
             current_sample_rate,
             sample_rate_probe_counter: 0,
             buffer_rate: current_sample_rate,
+            live_rate,
+            dropped_samples,
         })
     }
 
@@ -236,10 +278,12 @@ fn process_samples_rt_safe<T>(
         return;
     };
 
+    let channels = context.channels;
     let stats = rt_ring::convert_and_push_to_ringbuf(
         samples,
         &mut context.conversion_buffer,
         &mut context.producer,
+        channels,
         convert,
     );
 
@@ -247,7 +291,13 @@ fn process_samples_rt_safe<T>(
 }
 
 fn process_audio_data_rt_safe(context: &mut CaptureContext, data: &[f32]) {
-    let stats = rt_ring::push_f32_to_ringbuf(data, &mut context.producer);
+    let channels = context.channels;
+    let stats = rt_ring::downmix_f32_to_ringbuf(
+        data,
+        channels,
+        &mut context.conversion_buffer,
+        &mut context.producer,
+    );
     after_push(context, stats);
 }
 
@@ -273,18 +323,35 @@ impl Stream for SpeakerStream {
     ) -> Poll<Option<Self::Item>> {
         let this = &mut *self;
 
-        if !this.reader.has_buffered_samples() {
-            const SAMPLE_RATE_PROBE_INTERVAL: u32 = 128;
-            this.sample_rate_probe_counter = this.sample_rate_probe_counter.wrapping_add(1);
+        // Probed on every poll, NOT gated on the read buffer being empty:
+        // a buffer that always has data is exactly the overrun case, so that
+        // gate hid the very failures it was meant to report. 8192 samples is
+        // ~6 checks/s at 48 kHz — fast enough to catch a rate change, slow
+        // enough that a sustained overrun cannot flood the log.
+        const SAMPLE_RATE_PROBE_INTERVAL: u32 = 8192;
+        this.sample_rate_probe_counter = this.sample_rate_probe_counter.wrapping_add(1);
 
-            if this
-                .sample_rate_probe_counter
-                .is_multiple_of(SAMPLE_RATE_PROBE_INTERVAL)
-            {
-                let after = this._tap.asbd().unwrap().sample_rate as u32;
-                if this.current_sample_rate != after {
+        if this
+            .sample_rate_probe_counter
+            .is_multiple_of(SAMPLE_RATE_PROBE_INTERVAL)
+        {
+            if let Ok(asbd) = this._tap.asbd() {
+                let after = asbd.sample_rate as u32;
+                if after > 0 && this.current_sample_rate != after {
+                    let _ = crate::debug_log::append(&format!(
+                        "[audio] capture rate changed {} -> {}",
+                        this.current_sample_rate, after
+                    ));
                     this.current_sample_rate = after;
+                    this.live_rate.store(after, Ordering::Release);
                 }
+            }
+
+            let dropped = this.reader.take_dropped();
+            if dropped > 0 {
+                let _ = crate::debug_log::append(&format!(
+                    "[audio] capture overrun, dropped {dropped} samples"
+                ));
             }
         }
 

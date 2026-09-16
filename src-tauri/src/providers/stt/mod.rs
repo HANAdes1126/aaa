@@ -2,6 +2,7 @@ mod audio_normalization;
 mod local;
 mod mimo;
 mod openai_compatible;
+pub mod text_guard;
 
 use crate::providers::config::{DiagnosticResult, ProviderId, ProviderKind};
 use crate::providers::error::ProviderResult;
@@ -47,6 +48,21 @@ pub trait SttProvider: Send + Sync {
     fn id(&self) -> ProviderId;
     fn capabilities(&self) -> AsrCapabilities;
     async fn transcribe(&self, request: BatchAsrRequest) -> ProviderResult<String>;
+
+    /// Transcribes with progressive partial-text callbacks. Providers whose
+    /// backend supports SSE streaming override this to emit the accumulated
+    /// transcript as it arrives (lower perceived latency); the default falls
+    /// back to a single-shot batch response so existing providers keep working
+    /// unchanged.
+    async fn transcribe_streaming(
+        &self,
+        request: BatchAsrRequest,
+        mut on_delta: Box<dyn FnMut(String) + Send>,
+    ) -> ProviderResult<String> {
+        let text = self.transcribe(request).await?;
+        on_delta(text.clone());
+        Ok(text)
+    }
 }
 
 pub fn build_from_saved_config(app: &AppHandle) -> Result<Box<dyn SttProvider>> {

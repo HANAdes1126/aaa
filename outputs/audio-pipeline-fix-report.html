@@ -1,0 +1,118 @@
+<!doctype html><meta charset="utf-8"><title>转写防循环修复验证</title>
+<style>
+:root{color-scheme:light}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;padding:32px;background:#f7f8fa;color:#1a1d21;line-height:1.6}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:#6b7280;font-size:13px;margin-bottom:24px}
+.cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 18px;min-width:150px}
+.card .v{font-size:24px;font-weight:600}
+.card .k{font-size:12px;color:#6b7280}
+h2{font-size:16px;margin:28px 0 8px}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;font-size:13px}
+th{text-align:left;padding:8px 12px;background:#f3f4f6;font-weight:600;color:#374151}
+td{padding:6px 12px;border-top:1px solid #f0f1f3;vertical-align:top}
+.num{font-variant-numeric:tabular-nums;color:#374151;width:70px}
+.txt{color:#111;word-break:break-all}
+tr.drop td{background:#fef2f2}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px}
+tr.drop .tag{background:#fee2e2;color:#b91c1c}
+tr.keep .tag{background:#e5f6ed;color:#047857}
+code{background:#f3f4f6;padding:1px 5px;border-radius:4px;font-size:12px}
+ul{padding-left:20px} li{margin:3px 0}
+.note{background:#fff;border:1px solid #e5e7eb;border-left:3px solid #6366f1;border-radius:8px;padding:12px 16px;font-size:13px;margin:12px 0}
+</style>
+<div class="wrap">
+<h1>会议转写"乱音"修复 — 验证报告</h1>
+<div class="sub">2026-09-15 · 针对 9-13 飞书会议（42 分钟 / 60 段）暴露的问题</div>
+
+<div class="cards">
+<div class="card"><div class="v">4 项</div><div class="k">已实施的修复</div></div>
+<div class="card"><div class="v">158 / 0</div><div class="k">Rust 单测 通过 / 失败</div></div>
+<div class="card"><div class="v">26/26</div><div class="k">真实幻觉段被拦下</div></div>
+<div class="card"><div class="v">30/60</div><div class="k">真实会议段被拦下</div></div>
+</div>
+
+<h2>改了什么</h2>
+<table>
+<tr><th style="width:110px">环节</th><th>改动</th></tr>
+<tr><td>噪声底</td><td>VAD 阈值由固定 <code>0.012</code> 改为「滑动窗口最小值 × 3.0」，非对称 EMA（上升快 α=0.2 / 下降慢 α=0.05），阈值夹在 [0.0025, 0.05]。持续底噪不再让 VAD 永远判定"有人在说话"。</td></tr>
+<tr><td>段上限</td><td>硬切 30s → <b>15s</b>，且在尾部 2s 内找能量最低点切开，不再把长发言切断在音节中间。</td></tr>
+<tr><td>静音段</td><td>整段 RMS &lt; 0.003 直接丢弃，根本不发给 ASR（对齐 Cluely/Natively <code>RestSTT</code> 的做法）。</td></tr>
+<tr><td>ASR 输出</td><td>请求加 <code>repeat_penalty 1.1</code> + DRY 采样；新增重复检测，判定为解码循环则返回空串丢弃，并写 <code>[stt] dropped degenerate transcript</code> 日志。</td></tr>
+</table>
+
+<h2>关键验证</h2>
+<ul>
+<li><b>仿真（新增单测 <code>noisy_meeting_is_segmented_per_utterance</code>）</b>：48kHz × 2 分钟，底噪 RMS 0.017（高于旧固定阈值 0.012），16 段 2–6s 语音 + 2–5s 间隙。断言段数≈话语数、最长 ≤16s、平均 ≤8s —— 这正是旧代码必然失败的形状（旧代码会切成 4 个 30s 段）。</li>
+<li><b>真机 ASR 无回归</b>：同一段 30s 中文语音，旧参数 vs 新参数各跑 3 次，转写文本<b>完全一致</b>（约 200ms，耗时无变化）。</li>
+<li><b>真实数据回归</b>：把那场会议实际产生的 60 段文本喂给新的检测器，下表为逐条结果。所有跑满 token 上限（≥200 字符）的幻觉段 <b>26/26</b> 全部命中；保留下来的是"嗯。""啊！"这类真实语气词与正常语句。</li>
+</ul>
+<div class="note"><b>已知边界</b>：<code>嗯嗯，好，家里那边就是，我的妈妈就是我的妈妈。</code>（23 字、重复率 0.63）也被丢弃了 —— 这类短且半重复的句子存在误判可能，属于当前阈值下可接受的取舍。</div>
+
+<h2>逐条结果（那场会议真实的 60 段）</h2>
+<table>
+<tr><th style="width:70px">判定</th><th style="width:70px">字符</th><th style="width:70px">重复率</th><th>原文（截断显示）</th></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">啊！</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">0.99</td><td class="txt">嗯嗯，啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">啊！那那那那那那那那那那那那那那那那那那那那那那那那那那</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">0.99</td><td class="txt">啊！是，是，是，是，是，是，是，是，是，是，是，是，是，</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">12</td><td class="num">0.00</td><td class="txt">嗯，拜托你了，阿信哥啊！</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">对，对对对对对对对对对对对对对对对对对对对对对对对对对对</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">啊！啊！啊！啊！啊！啊！啊！啊！啊！啊！啊！啊！啊！啊！</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">12</td><td class="num">0.67</td><td class="txt">一百二，一百三，一百四。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">啊！我我我我我我我我我我我我我我我我我我我我我我我我我我</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">5</td><td class="num">0.00</td><td class="txt">嗯嗯嗯嗯。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">3</td><td class="num">0.00</td><td class="txt">呃呃。</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">快跑！快跑！快跑！快跑！快跑！快跑！快跑！快跑！快跑！快</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊啊</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">啊！</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">0.98</td><td class="txt">啊啊啊啊！啊，嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">0.98</td><td class="txt">哎呦喂！我天哪！我天哪！我天哪！我天哪！我天哪！我天哪！</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">337</td><td class="num">0.99</td><td class="txt">我这又这样，又这样，又这样，又这样，又这样，又这样，又这</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">47</td><td class="num">0.67</td><td class="txt">嗯，不要说我的，不要说我的，都打死他！打死他！打死他！打</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">0.99</td><td class="txt">嗯嗯，我我我我我我我我我我我我我我我我我我我我我我我我我</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">哒，哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒哒</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">哦。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">14</td><td class="num">0.00</td><td class="txt">嗯，这个材料，这是我现在的。</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">378</td><td class="num">0.98</td><td class="txt">啊，这个啊，这个，这个，这个，这个，这个，这个，这个，这</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">啊！</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">20</td><td class="num">0.44</td><td class="txt">嗯，你玩的是这个最无聊的一个手机游戏吗？</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">13</td><td class="num">0.00</td><td class="txt">嗯，我这里出来的是四个字。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">23</td><td class="num">0.63</td><td class="txt">嗯嗯，好，家里那边就是，我的妈妈就是我的妈妈。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">6</td><td class="num">0.00</td><td class="txt">嗯嗯嗯嗯嗯。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">36</td><td class="num">0.39</td><td class="txt">嗯，有人给我打电话，他在楼下等你，之前得帮你确认，可是你</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">38</td><td class="num">0.44</td><td class="txt">嗯嗯嗯嗯，然后嗯嗯，然后呢是嗯嗯，然后这个呢就是就是就是</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">啊！</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">0.99</td><td class="txt">嗯，那那我那我那我那我那我那我那我那我那我那我那我那我那</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">我我我我我我我我我我我我我我我我我我我我我我我我我我我我</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">0.98</td><td class="txt">嗯啊，呀，呀，呀，呀，呀，呀，呀，呀，呀，呀，呀，呀，呀</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">0.99</td><td class="txt">嗯嗯，是是是是是是是是是是是是是是是是是是是是是是是是是</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">49</td><td class="num">0.68</td><td class="txt">嗯，是说，是这个，就是那个，呃，就是那个，就是那个，就是</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">47</td><td class="num">0.36</td><td class="txt">嗯嗯，那就，咱们就从上边看，从上边看，首先看课，课上不认</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">23</td><td class="num">0.89</td><td class="txt">嗯嗯，再看一眼，再看一眼，再看一眼，再看一眼。</td></tr>
+<tr class="drop"><td><span class="tag">丢弃</span></td><td class="num">253</td><td class="num">1.00</td><td class="txt">嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯嗯</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">啊。</td></tr>
+<tr class="keep"><td><span class="tag">保留</span></td><td class="num">2</td><td class="num">0.00</td><td class="txt">嗯。</td></tr>
+</table>
+</div>

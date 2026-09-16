@@ -1,0 +1,1644 @@
+<!doctype html>
+<html lang="zh-CN" data-page-node-id="MHTCxJavjTXEL2k2sfTmak">
+<head data-page-node-id="BmrgigiwsEkOAZrDrnOBZv">
+<meta charset="utf-8" data-page-node-id="3Sv02TrnPzG3mBF4B7GFBc">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="18Mh4B6TWDqBWcinRYiAim">
+<title>Meetly 场景题扩展测试</title>
+<style>
+:root { color-scheme: light dark; --bg:#f3f5f8; --panel:#fff; --text:#19202a; --muted:#667085; --line:#dfe4ea; --accent:#3457d5; --soft:#edf2ff; --ok:#147d50; --warn:#a15c00; --bad:#b42318; }
+@media (prefers-color-scheme: dark) { :root { --bg:#101318; --panel:#181d24; --text:#edf2f7; --muted:#a3adba; --line:#303743; --accent:#87a2ff; --soft:#202a49; --ok:#54d69b; --warn:#f3b45d; --bad:#ff8b82; } }
+* { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif; }
+main { width:min(1080px, calc(100% - 32px)); margin:36px auto 80px; }
+h1 { margin:0 0 8px; font-size:30px; } .subtitle { color:var(--muted); margin:0 0 22px; line-height:1.7; }
+.stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
+.stat,.case { background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+.stat { padding:15px; } .stat b { display:block; font-size:24px; margin-bottom:4px; } .stat span { color:var(--muted); font-size:13px; }
+.toolbar { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0; } button { border:1px solid var(--line); background:var(--panel); color:var(--text); border-radius:999px; padding:7px 12px; cursor:pointer; } button.active { background:var(--accent); color:white; border-color:var(--accent); }
+.case { padding:20px; margin:12px 0; } header { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }
+h2 { font-size:17px; line-height:1.55; margin:4px 0 0; } .eyebrow { color:var(--muted); font-size:12px; letter-spacing:.02em; }
+.meta { text-align:right; min-width:90px; } .meta b { display:block; color:var(--accent); } .meta span { color:var(--muted); font-size:12px; }
+.chips { display:flex; gap:7px; flex-wrap:wrap; margin:14px 0; } .chip { font-size:12px; padding:4px 8px; border-radius:999px; background:var(--soft); } .chip.ok { color:var(--ok); } .chip.warn { color:var(--warn); } .chip.bad { color:var(--bad); }
+.overview { line-height:1.75; padding:13px 15px; background:var(--soft); border-radius:10px; } .overview span { display:block; color:var(--muted); font-size:12px; margin-bottom:3px; }
+.bullets { margin:14px 0 0; padding-left:25px; } .bullets li { margin:8px 0; line-height:1.65; padding-left:4px; } .error { color:var(--bad); }
+.note { color:var(--muted); font-size:13px; line-height:1.6; margin-top:12px; }
+@media (max-width:720px) { .stats { grid-template-columns:repeat(2,1fr); } header { display:block; } .meta { text-align:left; margin-top:8px; } }
+</style>
+</head>
+<body data-page-node-id="evtie7ZoDryclPm12DkFa4"><main data-page-node-id="LX4a0Gj7sS4llF9pYgKT84">
+<h1 data-page-node-id="ENG3q8TzfFommBDnomM2i2">Meetly 场景题扩展测试</h1>
+<p class="subtitle" data-page-node-id="Z0M3EAuXWHYBz6XopSkIt1">模型：deepseek-v4.1-flash-ioa · 29 个问题 · 共 87 次回答（每题 3–3 次）。自动标签只检查分类和输出形态，回答好不好请直接看原文。</p>
+<section class="stats" data-page-node-id="Qnglp22KNFW8PCoQFB7801">
+  <div class="stat" data-page-node-id="e6O48M0D25CSTdAnMvChSW"><b data-page-node-id="A0RWimiQ6UdBk4zingQAGd">87/87</b><span data-page-node-id="Gx7J8YPTlRAbDdjqtwF77R">分类正确</span></div>
+  <div class="stat" data-page-node-id="A8ygI02DMZo6lLS0lH7eo9"><b data-page-node-id="JwAAeSDiYYYVpPl61epbFo">60/60</b><span data-page-node-id="XseSRPj3ee4EAfsap8YjFY">设计题为 3–5 条</span></div>
+  <div class="stat" data-page-node-id="e158kbGwe3dxf5Utoi7RKf"><b data-page-node-id="NjHbVT3RU9wVuyRwX3eTfG">0</b><span data-page-node-id="xlLb6eSF34KHujFQnOwGG6">设计题误输出代码</span></div>
+  <div class="stat" data-page-node-id="KLqWewJmB5k2noTzhBEbOi"><b data-page-node-id="jvoKt510FcokeH0zr7Gyg8">2.78s</b><span data-page-node-id="m4ru2K1QsxKDVPe0K9ZkSc">平均完整回答耗时</span></div>
+</section>
+<p class="note" data-page-node-id="wg4QnWhsolULDolpN3IJDV">分类分布：behavioral 6 · coding 9 · design 60 · knowledge 12；请求失败：0。其中“提到状态存储”是宽松关键词检查，不等于质量判定；“可能机械加入数据库”也需要人工结合题目判断。</p>
+<div class="toolbar" data-page-node-id="78tPVHBJIhpdWPwHq6ZjD4">
+  <button class="active" data-filter="all" data-page-node-id="9xSRORLqVZhGhvP864fgS5">全部</button><button data-filter="design" data-page-node-id="JX0ZgjCOG4DRMiz8KnQIUZ">design</button><button data-filter="knowledge" data-page-node-id="0GowVABA7t2zly9Og8UP1F">knowledge</button><button data-filter="coding" data-page-node-id="hAMBn4skXPlhqz0Bznc01H">coding</button><button data-filter="behavioral" data-page-node-id="XkW04gfzLDeDPVpZcJ4ELt">behavioral</button>
+</div>
+<section id="cases" data-page-node-id="RppGWkGZDvF0AuLABhBAp3">
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="RF7HXPa4HljqPib6mBSiqe">
+      <header data-page-node-id="2KcYGAhGCEAcZWqIMSBQ9g">
+        <div data-page-node-id="LWMpMAghcKHcAzacVUigsT">
+          <div class="eyebrow" data-page-node-id="YMPGF1p2DQWxmWE9IkwVlO">#01 · 第 1 次 · 后端 · design_lottery</div>
+          <h2 data-page-node-id="lxqb1yI67DIj1LF3kzCMzQ">给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么去设计数据结构，表格，和接口啥的</h2>
+        </div>
+        <div class="meta" data-page-node-id="6sQNmVzTIHfmhd0uV8oAfb"><b data-page-node-id="x7MC8fc2pLK4PZKp9b2M0i">design</b><span data-page-node-id="4RaCQ55R7Z3S86WTpAQ6Jp">3.19s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="sfh43Q30N5k4VsiCUBu1AM"><span class="chip ok" data-page-node-id="tLpleOV3mKvjikdcalQKnC">分类正确</span><span class="chip ok" data-page-node-id="BGJLwknIKjTolLRoovcBo9">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="YTNZjqa4P7rpNI5ZpmIy4T">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="D87UJq1CMCsYoNGyrr1KUp"><span data-page-node-id="PMN35Zzx0wVuOYhNFo2PVI">一句总览</span>这是一个带库存上限和单次概率的抽奖系统，核心是把库存扣减做成原子操作，用一个库存行来串行化并发。</div><ol class="bullets" data-page-node-id="DDllAtdauL32ObKFjpVNbI"><li data-page-node-id="lni6RP1MnNCbKgHGemAJuy">奖品表存 prize_id、总库存、剩余库存和单次中奖概率，1000 人抢 100 个奖品就是库存 100、概率 30%。</li><li data-page-node-id="QLOkwYceC6scqC6FkiTy7l">抽奖接口只做两件事：先判断剩余库存，再按 30% 概率决定这次是否中奖，中奖才真正扣减库存。</li><li data-page-node-id="2HT4G4UFge0pmWY12Zx36Y">库存扣减用数据库行锁或 Redis 原子操作保证不超卖，条件是剩余库存大于 0，扣减成功才算中奖。</li><li data-page-node-id="1VHTxDwRyOgQWvueX3A9nY">中奖记录表按 user_id 建唯一索引，防止同一个用户重复中奖或重试导致多发。</li><li data-page-node-id="1TyNMzrNMiOWHeHdtRPV3g">如果实际中奖人数不足 100，说明 30% 只是单次概率而非必中，需要额外的兜底或补抽策略来保证奖品发完。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="0nPxSr1EXLoGXRrvu7DB0R">
+      <header data-page-node-id="BVMUOIbL76FS4UnABf6c1f">
+        <div data-page-node-id="JdpQGj761OjWVM44r4OGJM">
+          <div class="eyebrow" data-page-node-id="NOCFCloANDKsZsskwsn7lV">#02 · 第 2 次 · 后端 · design_lottery</div>
+          <h2 data-page-node-id="DtG1ImdrcI5TXBDfYv2Kyu">给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么去设计数据结构，表格，和接口啥的</h2>
+        </div>
+        <div class="meta" data-page-node-id="NAf6eB40FaFd57bJTZ8ObJ"><b data-page-node-id="pApLaeaf9yfDCOBr0jPTPK">design</b><span data-page-node-id="TzcSaK5Gb9iRvRwgi93yvJ">2.73s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="p3Z1iPIu19GTqUHqrL70Cp"><span class="chip ok" data-page-node-id="3wS83dP1DyBwUbkE8FGwX6">分类正确</span><span class="chip ok" data-page-node-id="pSVowlB7EaFLTsHrT7oNQX">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="zDTad7fPaVD2pbeASa7GWI">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="9TF5qnWWxXGv2CKkzsAgoM"><span data-page-node-id="6Mg9z6GdHia6FrSN82HmFv">一句总览</span>这是抽奖的库存扣减加幂等发放问题，核心是用条件更新保证不超卖、用唯一键保证每人只中一次。</div><ol class="bullets" data-page-node-id="qE7bXEt6HTWOMTOMBgGFV6"><li data-page-node-id="DEhY5UsmpxPJ47MO5xzgUI">奖品表按 prize_id 记总数、剩余库存和开始结束时间，用户参与表以 (user_id, prize_id) 做唯一键记录是否中奖和领取状态。</li><li data-page-node-id="N0eLw1eXutQRitTbv0oLxX">接口只保留 POST /prize/draw，入参 prize_id，先用唯一键判断该用户是否已参与，重复请求直接返回上次结果，保证幂等。</li><li data-page-node-id="JCEfzONyF6liR0TctN3g5v">中奖判定先按 30% 概率抽随机数，未中直接返回，中了再用 UPDATE ... SET remain = remain - 1 WHERE remain &gt; 0 的条件更新扣库存，受影响行数为 0 说明已抢光。</li><li data-page-node-id="yxp2yGtgP6UaatK2fHiY7s">1000 人抢 100 个库存，高并发下把扣减和发奖放在同一个事务里，或用 Redis 预扣库存加最终对账来挡住热点。</li><li data-page-node-id="SEN7s7FYvRbOIwAikESZp4">剩余库存为 0 后接口快速失败返回活动已结束，避免请求都打到数据库，同时用过期时间清理未支付的中奖记录并回滚库存。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="3RpbgehYQPyiwsW4vXAQMt">
+      <header data-page-node-id="uWvmpYUgjCRA7wBQZh8QTK">
+        <div data-page-node-id="NNHCsduviS9BHCmOOMlzHV">
+          <div class="eyebrow" data-page-node-id="ky7utXyx1CIonlgIZxFMw6">#03 · 第 3 次 · 后端 · design_lottery</div>
+          <h2 data-page-node-id="RVq1J1omdsFaPiX6uFq2jf">给你1000个人抢100个奖品，且每个中奖概率是30%，请问你怎么去设计数据结构，表格，和接口啥的</h2>
+        </div>
+        <div class="meta" data-page-node-id="pOjWgegbAJpNnMTmf6NhXL"><b data-page-node-id="yzrjvqaFZ0iLMwD14JWQx0">design</b><span data-page-node-id="eJvtIHE0HyeBljZZNu6pvG">2.93s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="8icMhFao7xjtCUjXsbKSBd"><span class="chip ok" data-page-node-id="JAlzIgRUzjJpYFiV2xGQ7K">分类正确</span><span class="chip ok" data-page-node-id="sh2UiUv8NCOnhUTeoNtH0o">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="uSUUlwEdPCcftiGxVOo3JE">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="RxMvZ9ntMuyA013KviEsjl"><span data-page-node-id="FSUrNlLRQmcYVmDxpaK0j2">一句总览</span>这本质是高并发抽奖，核心是把 1000 次并发请求收窄成不超过 100 次中奖，并把中奖结果可靠落库。</div><ol class="bullets" data-page-node-id="K5TOfzRdrZxUNgOGgdPVeC"><li data-page-node-id="hZH4RM2hR7TRHKFouZvYGU">创建活动时把 100 个奖品预先拆成 100 个唯一券码写入库存表，用 row_key 直接标定名额，不在内存里维护一个整数计数器。</li><li data-page-node-id="uG2dDDVACuHbGYFwh6Z6Rt">抽奖用 Redis 做原子操作：INCR 全局抽奖计数器，超过 1000 则拒绝，再按 30% 概率决定是否授予，Lua 脚本保证计数和校验同一步完成。</li><li data-page-node-id="TX2y7bsOEse5XzyXIW2Ea0">中奖后用 Redis 预减库存，扣到 0 即停，再发 MQ 异步落库；MySQL 的 inventory 表带 version 做 CAS，保证前后端一致和最终不超卖。</li><li data-page-node-id="Bg1SCRlXBJYvqbWG1mHV3L">接口分两个：POST /lottery/draw 带 userId 和幂等号，返回中奖结果或未中奖；GET /lottery/result 查询用户中奖记录，都做成幂等。</li><li data-page-node-id="yFDN5xmUYjSLR56vqyS5ig">记录表以 idempotent_key 为唯一索引，中奖、未中奖都写流水，保证同一请求重试不重复扣减；超过 1000 或库存为 0 时直接返回错误码，不落库。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="2Vgm2Ln0uxvS6sjtMFS81F">
+      <header data-page-node-id="6TMOnpUIZzMSolTmIFRypW">
+        <div data-page-node-id="qHqyhuYgC4vF4Jx5sOzufv">
+          <div class="eyebrow" data-page-node-id="vhhkeL87BpwJS6DH7bd4Aj">#04 · 第 1 次 · 后端 · design_shorturl</div>
+          <h2 data-page-node-id="OByvsdQPpNOALEk2bhLZ7h">设计一个短链服务，说说你的数据结构和表怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="E4H4M30UK7BhyfWVEpHBp9"><b data-page-node-id="i7YvWb3jrR3QHWKKpMJmMA">design</b><span data-page-node-id="iz7PYXBNXzvtbVtTP5ByKe">3.00s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="p28VCLY9Wn6SRYF45mcaKU"><span class="chip ok" data-page-node-id="2mftuL9cdOBVARfEeWH8Gv">分类正确</span><span class="chip ok" data-page-node-id="2rT0somO8MHURrgHCszeKA">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="4t4rgmD2q9iSodBJDPeRsR">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="MJokO6qvOEESMdQpDV2IkH"><span data-page-node-id="vuUpoc8MayX2KPq0EgObvn">一句总览</span>这是经典的短链生成问题，核心是把长 URL 映射成一个全局唯一的短码并支持高并发跳转。</div><ol class="bullets" data-page-node-id="Tisg4jA2Hw5OJamaDxexsp"><li data-page-node-id="vhyKWK1j6hZ13l5y2VM2Fr">发号器生成全局自增 ID，再用 Base62 编码成 6 位短码，6 位能支撑约 568 亿条，配合号段模式或雪花算法避免单点。</li><li data-page-node-id="qxNSPSrbzzzQpy1l5H2xFi">映射表以短码为主键，存长 URL 和创建时间，短码列建唯一索引，回源时按短码等值查询走 B+ 树，O(log n)。</li><li data-page-node-id="9Cz7CIuD2zLU89LKQaqSLE">跳转链路用 Redis 缓存短码到长 URL 的映射，读多写少，缓存命中直接 302，未命中回源数据库再写回，设过期时间防冷数据堆积。</li><li data-page-node-id="eg7IOcYbocuXuQAUUiv66B">同一长 URL 是否复用短码是可配策略：复用省空间但无法统计每次访问，不复用则每次生成新码，按业务需求选。</li><li data-page-node-id="qNCo0BKvQWyOO0y4iXuAf5">高并发场景下先查缓存再落库，写路径只写库和异步刷缓存，避免缓存与数据库双写不一致。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="DYjoJD1tsLd6lPMFNS4jKG">
+      <header data-page-node-id="UuxBuzK8Ld3K3KFa2b6qjY">
+        <div data-page-node-id="Hn6PuNgQVjrL7ymf5A5ynP">
+          <div class="eyebrow" data-page-node-id="0ZfLl6F34XtWwsFfCxTxo1">#05 · 第 2 次 · 后端 · design_shorturl</div>
+          <h2 data-page-node-id="r3dFyMmnriSz2YLLcSesRe">设计一个短链服务，说说你的数据结构和表怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="pZECuwpo6mcKAfR3dCK1Kq"><b data-page-node-id="ApKbfFzYA5osD3zSxaTa5k">design</b><span data-page-node-id="qVEpDwQ6SmWrq2EZLGL6mi">2.59s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="8RXOpEBLXfTQaub9gLErve"><span class="chip ok" data-page-node-id="j3jFupoDiXgTKbOkOGIHW6">分类正确</span><span class="chip ok" data-page-node-id="P1plmZQgioDrYU7rBocHD6">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="719BBY3NfukdFi3OKOeN2I">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="kVDHHHbly7pXVaZlKF6Q3g"><span data-page-node-id="UopJ1v8CvGQOxpqn5CS9EJ">一句总览</span>这是经典的短链生成加跳转系统，核心是把长 URL 映射成一个尽量短、唯一、可持久化的 key。</div><ol class="bullets" data-page-node-id="S4EFgbj3xbEIv1YRtbGnBi"><li data-page-node-id="tzdXD1yGIID42a1R5CVVby">用发号器加 Base62 编码生成短码：数据库自增或号段模式取一个递增 ID，转成 62 进制，6 位就能覆盖约 568 亿条，天然无冲突。</li><li data-page-node-id="aCwI45MrWYrVY76WuCEOje">表以短码为主键或唯一索引，存长 URL 原文、创建时间、过期时间、状态和创建者，短码上加唯一约束兜底防止重复。</li><li data-page-node-id="QKrEPvJVPrRvfokLGATpoW">跳转走缓存：短码到长 URL 的映射放 Redis，缓存命中直接 302，未命中查库再回填，热点链接几乎不落库。</li><li data-page-node-id="BDdwLvaRoBrQlleJ6MVdtL">高并发写用号段模式批量取 ID 到内存，避免每次生成都打数据库；长 URL 用摘要或唯一索引去重，让同一 URL 复用已有短码。</li><li data-page-node-id="VuWq6JYiOwec5JrRXgJSVG">过期清理和统计异步化：删除或统计走消息队列，跳转链路只读不写，保证响应时间稳定。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="eGF3XEIVCzPWk3oVcthq2i">
+      <header data-page-node-id="nECr5DHmZvNBHSc8RjQHp6">
+        <div data-page-node-id="u0ZOhdEqvQgHySyRxnEkuA">
+          <div class="eyebrow" data-page-node-id="1nHOGiyfjikSQ8pFKuNOOA">#06 · 第 3 次 · 后端 · design_shorturl</div>
+          <h2 data-page-node-id="X07oShMRXdEyQGV9YRxFDk">设计一个短链服务，说说你的数据结构和表怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="7ZDicmqUkUC0JFuYW2G1qx"><b data-page-node-id="610Ti6jz9xtvCOX7LSnU1u">design</b><span data-page-node-id="xB6BHYmIY88J391uhQMZ3M">2.67s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="gvoKhDls9lHEWMlkTSYbQs"><span class="chip ok" data-page-node-id="hzPNUdoFFHmR1AsX1PijWS">分类正确</span><span class="chip ok" data-page-node-id="pp0DcdkBkbIEFbRUhaat8G">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="2eMuLvjq8QhO4d4M0dUUlj">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="1YQ7K5tXizRooCpRRWara5"><span data-page-node-id="wUkww8MAGxDTMhwOXsypXx">一句总览</span>这是经典的短链发号加映射问题，核心是让短码可生成、可查、可统计跳转。</div><ol class="bullets" data-page-node-id="en0K9MmqehWpGFPUZsCqci"><li data-page-node-id="B3ywYSngy0m6NqVUBFLprH">短码用自增 ID 做 Base62 编码，长度固定在六七位；同一长链可先用长链哈希去重，返回已有短码。</li><li data-page-node-id="GCVRFzfEITAsH1MpMEArpF">映射关系必须落库：一张 url_mapping 表以短码为主键，存长链、创建时间、过期时间，短码上建唯一索引保证查不到歧义。</li><li data-page-node-id="9OhTzTkW4JRiQnORTaQrP7">跳转是读多写少的热路径，用 Redis 缓存短码到长链的映射，缓存不命中再回源数据库并写回。</li><li data-page-node-id="esakGrogPKCh0cR77GVhCk">生成短码时用号段或发号器批量取 ID，避免每次插入都依赖数据库自增，同时不暴露自增规律。</li><li data-page-node-id="KEV9gKySo0B2wQy8bdXFU3">点击统计走异步：跳转时只写日志或消息队列，后台聚合到统计表，不阻塞 302 响应。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="HJx0R68dAZiu9rZyZqEhzd">
+      <header data-page-node-id="tTJNyyFfMH6SuoAmgIAAr8">
+        <div data-page-node-id="jIrsP9kxBWA6E3lKuCmQte">
+          <div class="eyebrow" data-page-node-id="vwN6o5wYOcdbmf69mwuBSd">#07 · 第 1 次 · 后端 · design_feed</div>
+          <h2 data-page-node-id="nJnlHl4LPlsilVZJ5fQLlv">如果让你设计一个朋友圈的信息流，存储和接口你会怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="8YLG1IGN3jDe6JxJWDGQ4Q"><b data-page-node-id="ay2VnWOH4IJoEE8CG4uOO8">design</b><span data-page-node-id="hclWWDM6rrSCEnQM9z6xT7">2.75s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="rsbFHrBIE39THnf8LTfaDy"><span class="chip ok" data-page-node-id="hnsMiB0nXJndKULhhLEPmX">分类正确</span><span class="chip ok" data-page-node-id="zBXjkk7E1zGyX39C6eGmzn">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="dMRf5gQgFc6QocqucKLLb7">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="BKl3XaUpmeclHZoUpZws2Y"><span data-page-node-id="DfsijdFVUzvZVmQSmeTr0L">一句总览</span>这是经典的朋友圈 Feed 流设计，核心是写扩散加读时聚合，把发布和拉取拆开。</div><ol class="bullets" data-page-node-id="kceK099swgh8cpSCfxh1eX"><li data-page-node-id="aL6bk2s388GpqGGRs8KoSb">发布时把动态写进内容表，再按发布者关系投递一份 feed_id 到每个好友的收件箱，写入用异步队列削峰。</li><li data-page-node-id="byb39iR6d1RrQIrjFh3wWf">收件箱按 user_id 加时间倒序存在 KV 或 Redis 里，只存指针不存内容，拉取时按游标分页取 id 再批量回表。</li><li data-page-node-id="EF4pUSGQ1kPFw2KCelCSzx">大 V 不做全量写扩散，改成读时拉取，发布时只标记版本，由拉取端合并普通好友的收件箱和大 V 的动态流。</li><li data-page-node-id="kHARxLaFmbxV0d0YAZwF6C">接口分成发布、按 cursor 拉取时间线、以及拉到底时翻历史三条，返回动态内容和作者摘要，分页用游标不用 offset。</li><li data-page-node-id="DA4abUX4WnWc5VXu1YHJ4k">一致性上收件箱允许最终一致，删除和可见性变更走一条补偿消息回删，保证不出现已删动态。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="VSgR0VTvvQBOHaPoOxvVN3">
+      <header data-page-node-id="NGoU2mt2wtHd65RHMmkzeA">
+        <div data-page-node-id="0YKUmPAsHUNvY2lPftLtYT">
+          <div class="eyebrow" data-page-node-id="f1uU3N0J68aTsx0AwR9vYQ">#08 · 第 2 次 · 后端 · design_feed</div>
+          <h2 data-page-node-id="rzLJGCS1AjYVxcbiBAtYPH">如果让你设计一个朋友圈的信息流，存储和接口你会怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="GTBYYhWgxJj8pkRaGdabws"><b data-page-node-id="dbhqcjQ70vgC3DVH3T5aad">design</b><span data-page-node-id="5QE7RqeTBwNREV3OwidY0s">2.57s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="jYSFMbSAyGIx86xQHWDlBL"><span class="chip ok" data-page-node-id="o6tQSa36WYcURYP1VOiXOo">分类正确</span><span class="chip ok" data-page-node-id="sofflXEVaXxsQeuH3WnF6z">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="I9W3r4n4uuas8l7pBw6qtT">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="FTjf4VWw4JyCgX3kwKfKwF"><span data-page-node-id="F2YfM8r7QXvYrMlSpLB6uX">一句总览</span>这是写扩散的 feed 问题，核心是发布时把动态推到关注者的收件箱，读的时候直接取。</div><ol class="bullets" data-page-node-id="cV906r9LZUkG7BFMWHG8f0"><li data-page-node-id="9amPpy6IHx7rilUdFjzlfo">发布写一条 feed 主表存动态 id、作者、内容、时间，作为内容的唯一来源。</li><li data-page-node-id="eQaI1kPYI4YAxW1GxuFvy2">每个活跃用户维护一个收件箱表，按 user_id 加时间倒序存 feed_id 和时间戳，读流就是按 user_id 分页扫这张表。</li><li data-page-node-id="AFHSvUobY2tJNhdHq9BHTx">发布时异步推送：普通用户直接扇出写粉丝收件箱，大 V 走拉模式，读的时候再合并，避免一条动态写几百万行。</li><li data-page-node-id="CmYsogD9ZqAY5w7Ck70XaL">分页用游标（最后一条时间戳加 feed_id）而不是 offset，避免翻页时新内容插入导致重复或漏掉。</li><li data-page-node-id="fOEImhJFvMUY4H6dHQBBj0">收件箱按 user_id 分片、只保留近几百条，冷数据回源到 feed 主表，删除和权限校验时以主表为准。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="TEgnz29ELQuDDUxQfzCBIG">
+      <header data-page-node-id="ax0Sfx3NkQtqR9dP5TDrct">
+        <div data-page-node-id="cAYsOL2V1Y1CKQjnPtGOFL">
+          <div class="eyebrow" data-page-node-id="3az8d1g2C6B6t3xzpSPnOO">#09 · 第 3 次 · 后端 · design_feed</div>
+          <h2 data-page-node-id="4nh4BNRDiVG2WOi9oXtLT9">如果让你设计一个朋友圈的信息流，存储和接口你会怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="P8sPoyZ0TzUcBYt1mHHpOR"><b data-page-node-id="phfHJrnrBrrdGfhL5Qi42R">design</b><span data-page-node-id="5ATY6lZHi5neMD4h7Avisr">3.06s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="WAvWR5XFrRD5GhDNDHIGLX"><span class="chip ok" data-page-node-id="TG4AoENAbfYQgfcsZoIPcC">分类正确</span><span class="chip ok" data-page-node-id="J9AHiMYggt5RvYDCf0WQng">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="8BHSvTSLZzyOF8w2Hdflfv">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="FRKS6gF4d2LYZFfBzRT0kO"><span data-page-node-id="cUhCLWurZfBVs7R8wZ4GwW">一句总览</span>这是典型的 Feed 流设计，核心是把“写扩散”和“读扩散”按用户类型分开，存储上做冷热分层。</div><ol class="bullets" data-page-node-id="JgWxrHHfyRBUbZbmYC77jF"><li data-page-node-id="3Ax52ubTGhV2Xvl4j5M1np">发朋友圈时把内容（文字、图片URL、位置）存一份内容表 feed_content，按 feed_id 唯一标识，图片只存对象存储地址不存二进制。</li><li data-page-node-id="o8CEk3zDUHPxk9bdLlskGb">收件箱用 feed_inbox 表按 user_id 存 feed_id 和发布时间，普通用户写扩散、大 V 走读扩散拉取合并，避免粉丝量大的用户写放大。</li><li data-page-node-id="I32GJCMda0hRoKzSXqhGq9">拉取接口按 user_id 和时间游标（last_time 或 feed_id）分页查询收件箱，返回内容时批量回表或走内容缓存，不返回全量。</li><li data-page-node-id="Js7ywiYVCChaVijfnBfv3k">用 Redis 缓存活跃用户最近 N 条收件箱，冷数据落 MySQL 或 HBase，删除和可见性通过软删除加可见范围字段控制。</li><li data-page-node-id="eMhmlUK4RdKWOaIYUOdGZ5">时间线用时间戳加 feed_id 保证同一秒内稳定排序，游标分页避免翻页时的重复和遗漏。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="T67wKJzDvj9KdlDfSFe1s6">
+      <header data-page-node-id="3VHKOuabr4U2i8AJPJpqxk">
+        <div data-page-node-id="pLDGrAA2mYlXDuO3QGA2PD">
+          <div class="eyebrow" data-page-node-id="C9S4PqqPsHBO4yI1P1oOZr">#10 · 第 1 次 · 后端 · design_gacha_pity</div>
+          <h2 data-page-node-id="5AEBQV3MjKnSvscoGl63z3">如果是9宫格，中间一个按钮，周围8个奖品，稀有概率不一样，然后每个用户每抽一次幸运值都会提高，请问你怎么去设置</h2>
+        </div>
+        <div class="meta" data-page-node-id="3HyK6FaDDx9wRpdTO6hwyg"><b data-page-node-id="AsF1TCOOzQqwLsUtbHSW2Q">design</b><span data-page-node-id="z6HMV4ZoSyXD4WDtROH2Sw">2.81s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="Y8SrOc7DHSh5JSUo7Z08Df"><span class="chip ok" data-page-node-id="GVxSJXq1buB7Sww7D52K5u">分类正确</span><span class="chip ok" data-page-node-id="4lhlKJMzx2Epk0pVqkAjzx">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="DuCzcIRo7tOvCcDf0xpnyp">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="saUo49g5mO3CSkVl34W9Hf"><span data-page-node-id="wJrC6XfGL9LwmDvOgb7s36">一句总览</span>这是带概率保底的加权抽奖，核心是把静态权重和用户的动态幸运值合成实时权重。</div><ol class="bullets" data-page-node-id="e6HhZqiu67KHvynNKzAhs2"><li data-page-node-id="fMcZnNCzixLbxOMwSDE00q">奖品表存 9 个格子的位置、基础权重和稀有度，基础权重决定初始概率，例如普通各 0.15、稀有 0.02。</li><li data-page-node-id="azwDYf3IRXx07SU6XyDrfV">用户幸运值单独存一张表，用 user_id 做键，每次抽完加固定步长，中奖后按奖品档位回退或清零。</li><li data-page-node-id="D5TvfuqKNipFLH1H1bSEHD">最终权重 = 基础权重 × (1 + 幸运值 × 系数)，稀有奖的系数给大一些，让连续不中时稀有奖的权重涨得更快。</li><li data-page-node-id="ILKREPbGE72fkvJdb3v4KR">按最终权重做一次轮盘赌抽格，把结果和抽奖前的幸运值一起落库，保证可追溯和防重复扣次数。</li><li data-page-node-id="8H4PiW9pSfVJSO14kBoxyH">幸运值要设上限并按用户维度加并发控制，避免多端同时抽把保底冲穿。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="lT1UX9V5JDHECCsZDa8BhA">
+      <header data-page-node-id="0WFLfw1dZK6NMhC2uQTJkI">
+        <div data-page-node-id="NzVLlUsq0g2cn8EFUYGNDA">
+          <div class="eyebrow" data-page-node-id="yd2QS9eHjuDFtlJswN2JCb">#11 · 第 2 次 · 后端 · design_gacha_pity</div>
+          <h2 data-page-node-id="qWQMTAm1UTyYeDoKLqIzhd">如果是9宫格，中间一个按钮，周围8个奖品，稀有概率不一样，然后每个用户每抽一次幸运值都会提高，请问你怎么去设置</h2>
+        </div>
+        <div class="meta" data-page-node-id="Gk34Emj7yCeCGjYmm1KdVG"><b data-page-node-id="E7IHmFgDsIcNHrdAqspWEL">design</b><span data-page-node-id="ieMT0JCwDnzY5pOjbAoyqi">2.70s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="yTurFspbjtlil0C8m3436p"><span class="chip ok" data-page-node-id="aMwUHu6D4EACfKpQZWOZUu">分类正确</span><span class="chip ok" data-page-node-id="eKf9sqLN0gBmQ08Oe9PFsE">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="S2ymwiIw96bbE2QidJTc7M">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="CDapbZaFwKb5DwwBTkmqkd"><span data-page-node-id="ZCYMAbCTINBEDA6VLvtcSn">一句总览</span>这是带保底权重的抽奖概率模型，核心是用幸运值动态放大权重而不是直接改概率。</div><ol class="bullets" data-page-node-id="p7Kjp2EIVKrOC5h6PbjtVW"><li data-page-node-id="73BCE2oAExjHZoE0HTT12m">每个奖品配置基础权重，按稀有度递减，中奖概率等于该项权重除以总权重，中间按钮本身不参与抽奖。</li><li data-page-node-id="C7wo0zTTAqBuQ9daVRaVYX">幸运值按次数累加，用倍率函数按稀有度反向放大权重，越稀有放大系数越大，普通奖品基本不动。</li><li data-page-node-id="OOkVEsYXOMjLEGEYApdGgG">幸运值必须是持久化状态，按 user_id 存在数据库并加过期时间，抽中稀有奖品后重置为 0，否则保底会无限叠加。</li><li data-page-node-id="YECDllpGdImbnSgU2KJCbh">设一个硬保底次数，达到阈值时直接把概率收敛到稀有奖品，保证最坏情况下也有上限。</li><li data-page-node-id="OaLDmG4tTuuFdOAtcQA0K5">并发下用行锁或条件更新扣减幸运值并记录抽奖流水，防止同一次幸运值被重复消费。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="ASmREHcZQyIbkGHxRyyeDN">
+      <header data-page-node-id="qx0K1EejjHjhMKlecAYrsF">
+        <div data-page-node-id="8fnyeR1Q8j88TszK4eqGac">
+          <div class="eyebrow" data-page-node-id="k6tCuBJpUNjkwJK21hVVxA">#12 · 第 3 次 · 后端 · design_gacha_pity</div>
+          <h2 data-page-node-id="MeFu9qC41zAaefis9NMdFt">如果是9宫格，中间一个按钮，周围8个奖品，稀有概率不一样，然后每个用户每抽一次幸运值都会提高，请问你怎么去设置</h2>
+        </div>
+        <div class="meta" data-page-node-id="pjsaqwsggO4EGC6NaqFOhC"><b data-page-node-id="9vSu5xNc4ujjHhZEi2CI2Q">design</b><span data-page-node-id="krkwVEnUZ7cPpyzoFkuE1R">2.58s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="L4ffvR2x0s65vVQ0cDARam"><span class="chip ok" data-page-node-id="MUXvOqPgSW0dW12NNyf0Kf">分类正确</span><span class="chip ok" data-page-node-id="899pVHYwEuR7VeLyeTldsA">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="4PKKBz3bXPujDRALEHbjBm">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="9jpyJQcfeaTRmp1uQ7S8KG"><span data-page-node-id="JwulU2xBVmFFzvetlJLgIC">一句总览</span>这是一个带保底权重的随机抽奖，核心是把概率配置和用户幸运值拆开：静态权重决定基础分布，幸运值作为动态加成在每次抽奖时叠加。</div><ol class="bullets" data-page-node-id="vFWprq9cREwfrBxcZzoM8j"><li data-page-node-id="a77kfcsbBW002KqvDAsuyA">八格各配一个基础权重，稀有度越低权重越小，普通奖权重最大，权重决定这一抽落在哪个格子。</li><li data-page-node-id="cV4t7UCJcAz84IZP3AaiWt">每个用户一条幸运值记录，按 userId 存库，抽一次涨一点，抽中稀有奖后清零或大幅回落，避免连续出货。</li><li data-page-node-id="ObDjkUxGFMTSEw01CPDDMp">实际概率按基础权重乘以幸运加成再归一化，幸运值越高稀有格被抬得越明显，等于变相保底。</li><li data-page-node-id="N7qP7penWYej7dAoMDzLdz">抽奖走服务端单事务：扣次数、更新幸运值、落中奖流水，用 userId 加锁或乐观版本号防止并发刷。</li><li data-page-node-id="K5X2WbmnMSSgOOvUwkrzTw">幸运值要为每个用户设上限，并在抽奖流水里记录每次的幸运值和命中权重，方便对账和调概率。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="MKaEkfNPKVrbbWXroOFdfi">
+      <header data-page-node-id="wdMxNwn4fHTP2uCoxP0lNH">
+        <div data-page-node-id="ZOT6qYqfVHySE1AgI6mhXP">
+          <div class="eyebrow" data-page-node-id="c83BA4isOM7hJZjLXCtHT3">#13 · 第 1 次 · 后端 · design_order_timeout</div>
+          <h2 data-page-node-id="rKFF97RD1G0y4qjgJeBU49">订单创建后30分钟没支付就自动取消，这个功能你怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="2mCpZg2IuDhLwDep97kSef"><b data-page-node-id="11jfFiTtPhtRzuwHWuXezO">design</b><span data-page-node-id="0FnjIhA3gSINpcJyjIPpVy">3.31s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="wLopiFpTMA60W87ASDagZv"><span class="chip ok" data-page-node-id="K23SuwzM0ES9wSdpxXU6ze">分类正确</span><span class="chip ok" data-page-node-id="r5z5RzC0rQ242iUmyP7Sd0">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="X3Hd84A1fgDanymwEibnGC">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="bQowD4TOcb4Ue7PogrZXF5"><span data-page-node-id="zmoaQpeDsILhZBVqTOoz3A">一句总览</span>这是延迟任务加状态机的问题，核心是把「到点取消」和「用户支付」做成两个互斥的状态流转，谁先拿到订单的当前状态谁生效。</div><ol class="bullets" data-page-node-id="sMb6oX1w7x3FgEFbIaaF3F"><li data-page-node-id="hOuryXAQAq3Nf0Dts7fe8O">订单表保留状态和超时时间字段，取消操作必须是带状态条件的更新，只有仍处于待支付才能改成已取消，天然防并发。</li><li data-page-node-id="rziMbzi2zC65Ux3IQO2FCS">延迟触发用延迟队列或定时扫表都行，延迟消息优先，按订单ID和超时时间投递，量大时按时间分片扫表兜底。</li><li data-page-node-id="85CFESTMp3ES9Vjj1ErAQr">支付回调里也要做同样的状态条件更新，先到先得，后到的那一方更新影响行数为零就直接返回失败。</li><li data-page-node-id="XjXSqG1ZzrY6rqpu0lvO3A">取消成功后释放库存和优惠券，这些释放操作要幂等，重复消费同一条消息不能扣两次库存。</li><li data-page-node-id="fxmVTJCCsR82HCfLVc6XQP">超时时间以数据库里的创建时间为准，不用消息投递时间，避免消息积压导致取消时间漂移。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="he1s6OW7Oqyxj4XKBC3rbC">
+      <header data-page-node-id="YH4bePjkE7HDc3Ueqg3xut">
+        <div data-page-node-id="IB0gw11YnSztdwg1p9G0Sy">
+          <div class="eyebrow" data-page-node-id="ZhVKmXM3E4pEtyKBMv26j3">#14 · 第 2 次 · 后端 · design_order_timeout</div>
+          <h2 data-page-node-id="gLhdiRJCzzTwIQPUeNxAtW">订单创建后30分钟没支付就自动取消，这个功能你怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="0qJexWFEOfGy00BrB7p8bG"><b data-page-node-id="VmlcENsdO0O1Km3zMQrd4t">design</b><span data-page-node-id="9NrRMBRRXAeRuuIe9Qo46V">2.29s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="srNHz20NsYSTGjiNe5xYRO"><span class="chip ok" data-page-node-id="Df5Ez1HN0FT4eZIsxo455G">分类正确</span><span class="chip ok" data-page-node-id="ibkHklBoOhKXtqa8qtSpfR">应用显示 5 条思路</span><span class="chip warn" data-page-node-id="0Hv5uTrhw5uIaJc00zax8A">需人工检查状态存储</span></div>
+      <div class="overview" data-page-node-id="n0jsYdM1ILFSIYemYAxnAF"><span data-page-node-id="hNQw4LPjJfTcR9VP31cU1u">一句总览</span>这是典型的延时任务，关键是让取消这件事可重放、可兜底，而不是只靠一个内存里的定时器。</div><ol class="bullets" data-page-node-id="fRIQzHbvYF0tcXUG4BBNO8"><li data-page-node-id="BGpQ0nAk1V4zCJAGN92RAa">核心模型是订单状态机：待支付、已支付、已取消，只有待支付能转已取消，用状态条件更新保证幂等。</li><li data-page-node-id="hvrwgDmrj0cIjPURZZCKYj">用延时消息或定时任务在30分钟时触发取消，消息里只放orderId，消费时回查订单当前状态。</li><li data-page-node-id="zJfrdqJtqKe9r8rWdx4QXz">并发上用UPDATE orders SET status=已取消 WHERE order_id=? AND status=待支付，返回0行说明订单已支付或已取消，直接丢弃。</li><li data-page-node-id="Gc0hWchlN4UadBeBAOoUJH">兜底是扫单任务，按create_time加索引扫描超时未支付的订单，防止延时消息丢失导致订单永远挂着。</li><li data-page-node-id="1gp76QJR7wHQ6gjEyCQfu8">取消成功后要释放库存和优惠券，这一步也得幂等，或者放在同一个事务里保证一致。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="pIxv0GkGG3YFtG0mMV76CJ">
+      <header data-page-node-id="rCJ0fJqBjWVkkbZcc61f4g">
+        <div data-page-node-id="FkMka2jXz6ZTKAo8WD2goH">
+          <div class="eyebrow" data-page-node-id="efJLgImrLh7mSulmABrWtO">#15 · 第 3 次 · 后端 · design_order_timeout</div>
+          <h2 data-page-node-id="J47l9TsConKkIYKV1GArJu">订单创建后30分钟没支付就自动取消，这个功能你怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="YuJevi1fhLFhhtnToP4M9T"><b data-page-node-id="Vg7Az2g4izsoJK8x9JeC4N">design</b><span data-page-node-id="AmOU9ws8ejYoBosi9jHlJB">2.44s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="gGBXh5iGPCpDRCiSFqMejt"><span class="chip ok" data-page-node-id="ZCYAtozxIdZnLnYRQQ5KEG">分类正确</span><span class="chip ok" data-page-node-id="d7BEgNuTISVvJsXwmP4BR9">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="rUJrXQUyhIzAZRs3fimQBI">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="BNSUJv0XDHRc9G7XX34n2X"><span data-page-node-id="QaYQV5EsL0tAzP6qTx5cwA">一句总览</span>这是延迟任务加最终一致性的问题，核心是不依赖同步轮询，把取消时机交给一个带持久化的定时机制。</div><ol class="bullets" data-page-node-id="gSkNh87t1qDRehzXWbCK2s"><li data-page-node-id="yoagAMNxGWafD6z8gXvAnc">订单落库时带创建时间和过期时间，状态设为待支付，这是唯一的真相来源。</li><li data-page-node-id="Jc51I8IEH8NFSP9c3Eo8hI">下单成功后投递一条延迟消息，到期未支付则由消费者触发关单并释放库存。</li><li data-page-node-id="QgpjAYSzHqghNDirBfNx0S">用 Redis 的过期时间或时间轮做本地兜底，避免消息中间件丢消息导致订单永远挂着。</li><li data-page-node-id="mLUVKYPd7N11haWB7qVVhi">关单和支付可能并发，用数据库状态条件更新做幂等，只有待支付才能改成已取消。</li><li data-page-node-id="rdEEAuQ5nGcBTWgyLd8pWq">再加一个定时扫表任务兜底补偿，扫的是超时但仍为待支付的订单，处理量可控。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="pEhDCiqimhlErPprsEYMo0">
+      <header data-page-node-id="JfcW7AP2199nfuUcm7jlh7">
+        <div data-page-node-id="DgIiopmQzZLnFxF77r98Fv">
+          <div class="eyebrow" data-page-node-id="4pvRMpWF76BKup5qKCcnOY">#16 · 第 1 次 · 后端 · design_seat_hold</div>
+          <h2 data-page-node-id="LSN16syu3FHa54ENYJsWJM">设计电影院选座，用户锁座5分钟，超时自动释放，还要避免同一个座位卖给两个人</h2>
+        </div>
+        <div class="meta" data-page-node-id="GOLDQnk2BBpdmrgSZZKXEp"><b data-page-node-id="vvrc8UOhcwS3mbWiGj37mU">design</b><span data-page-node-id="ULUlacNrUvk3fwS3eRxukL">3.16s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="y86YKpaEFB0c0zB1GrgwsM"><span class="chip ok" data-page-node-id="EXjFUNssg4TbIpGPaxE6ZY">分类正确</span><span class="chip ok" data-page-node-id="t3XsoHPDW3sAIKDSR4Tur8">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="SWtbbMtI2V44Tkq82wUckO">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="U9BJTfjOPcjWzTy48Cst5I"><span data-page-node-id="PLJCHsiGxiVBWCcjDBHnQX">一句总览</span>这是座位库存的带租约预占问题，核心是用带过期时间的临时锁把「选中」和「卖出」分成两个阶段。</div><ol class="bullets" data-page-node-id="MVHI2kxmzp0OXuLBLZJpB7"><li data-page-node-id="kN5D0xLXodXkufR6apIcf3">座位状态表按场次加座位号唯一标识，状态在可用、锁定、已售之间流转，锁定时写入占用用户和过期时间。</li><li data-page-node-id="eiMuuDp2Hm2T06YdvUHzah">锁座用条件更新保证原子性，只有当前状态是可用或锁已过期才能改成锁定，靠数据库唯一约束或行锁让同一座位并发抢座只有一个人成功。</li><li data-page-node-id="AKCYLKYWb4XNLc0bRMVwX2">过期释放不靠定时任务扫全表，而是在读取和下单时判断锁是否过期，过期就视为可用，再用一个低频定时任务兜底清理。</li><li data-page-node-id="hBCzWoX0pdRl9Ynzy5VivP">下单支付成功后把锁定改成已售并清掉过期时间，是整个流程里唯一不可回退的状态变更。</li><li data-page-node-id="gacZHdNwpcx0pe8BgG2DG3">前端按场次缓存座位图，锁座和下单走带幂等键的接口，避免重复点击生成多把锁。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="ogHmCRXpKWzgV0ibz2RBvP">
+      <header data-page-node-id="JANv7eeZ39cbtmPvCZqalv">
+        <div data-page-node-id="6DiC78R6YrRNkavWo6KEZU">
+          <div class="eyebrow" data-page-node-id="zBI0kGkTgUH7sMrjHWMScS">#17 · 第 2 次 · 后端 · design_seat_hold</div>
+          <h2 data-page-node-id="QBivlHW24IhBGsHt9qaMTa">设计电影院选座，用户锁座5分钟，超时自动释放，还要避免同一个座位卖给两个人</h2>
+        </div>
+        <div class="meta" data-page-node-id="0kp0BsZwD23AqjHxYVxbBc"><b data-page-node-id="AnLcDKMUBT5G5yMoasOUYr">design</b><span data-page-node-id="RI1mTvjDSBp0HtDP4gDmmq">2.85s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="guXkRhE7onrzcWkUaSWRVp"><span class="chip ok" data-page-node-id="EzIEQUqsCUyPFoGEEaq4x8">分类正确</span><span class="chip ok" data-page-node-id="1caICtiPuZrDmzwJdrDBsh">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="T68jywZBAEBCxPxTUpEyfg">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="qouC59Nel5YMDYiNnJinox"><span data-page-node-id="CaKEfZmUE0OZndsOj9PlJY">一句总览</span>这是一个带过期时间的资源预留问题，本质和秒杀下单锁库存、酒店房间预留是同一类，核心是把锁做成有 TTL 的状态而不是常驻记录。</div><ol class="bullets" data-page-node-id="N9qHJ7y4r9zAgJkeInC4d6"><li data-page-node-id="GAgoK6NqBPr39VXHkvXttY">座位以场次加座位号唯一标识，锁记录存 Redis 并设 5 分钟 TTL，key 天然保证同一座位同时只有一个人能写成功。</li><li data-page-node-id="LhN128hdyz9YNd7d9RP44S">选座时用 SET NX 或 Lua 脚本原子抢锁，拿到锁才算选中，没拿到直接返回已被占，绝不能先查再写。</li><li data-page-node-id="VrcLHmfDoYjapBa3zfm3c0">下单成功才把锁转成正式订单并落库，锁过期则由 TTL 自动释放，不依赖定时任务才能正确回收。</li><li data-page-node-id="dC61EVxRuA3IxQUiyfTsmP">释放不能只删 key：Lua 脚本比对持有者 token 再删，避免删掉别人刚抢到的新锁。</li><li data-page-node-id="1fsbJDIYjZ5uxYc5uOp6ED">最终一致性靠落库时的唯一索引兜底，即使锁层失效或 Redis 丢数据，重复写入也会被数据库拒绝。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="FLVQtUAeHrLK6g91R2To8E">
+      <header data-page-node-id="moNXZ8cfF5ytzESUJnvgQw">
+        <div data-page-node-id="l8qGUUrwVIBkFzmqTqc8x3">
+          <div class="eyebrow" data-page-node-id="U5VssvVmLhsH8qxehKSMBv">#18 · 第 3 次 · 后端 · design_seat_hold</div>
+          <h2 data-page-node-id="Lt4nlW9MMIX1aS40IgAVvX">设计电影院选座，用户锁座5分钟，超时自动释放，还要避免同一个座位卖给两个人</h2>
+        </div>
+        <div class="meta" data-page-node-id="AGktzL6A12Ffm1TJdBFU2o"><b data-page-node-id="1tnnu2GaDtbhmPfOS6kqZE">design</b><span data-page-node-id="4XWnt9wqF7GmL5CTAF5SMB">2.24s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="X7UvPah8pzgFeqMIbJVzwJ"><span class="chip ok" data-page-node-id="FtXvA8yUD0LSNxHYsepYk7">分类正确</span><span class="chip ok" data-page-node-id="udleS6qzA6XyeGKDCRGYqL">应用显示 4 条思路</span><span class="chip ok" data-page-node-id="v8DmOCZFrs5zCISoc2geF2">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="zm6WDLLVCYa3o0hrXALGH6"><span data-page-node-id="FrBCdlPpqiQ0k6z4SGcGml">一句总览</span>这是典型的座位库存 + 短时锁的高并发系统，核心是把座位状态收敛到数据库的原子更新上，再用带过期的锁做业务层语义。</div><ol class="bullets" data-page-node-id="U3rGDOUyQmaofWbspCGx2k"><li data-page-node-id="VC68C7DucFeaXXHlldKLNj">座位表以场次加座位号为唯一键，状态字段记录可用、锁定、已售，锁定时写入锁定用户和过期时间戳。</li><li data-page-node-id="EUrxra3dzCcfxxjTjr3h8n">锁座走条件更新：只有当前状态为可用或锁已过期才改成锁定，用受影响行数判断胜负，配合数据库唯一约束兜底，避免两个人同时拿到同一座。</li><li data-page-node-id="SZrdeZ3K45f4Bl7X3JB7mU">释放不靠定时任务扫描，下单和查询时惰性判断过期，再加一个低频的兜底清理任务修正脏状态。</li><li data-page-node-id="wgelhE8GnK1a0LGzpNpzhT">下单成功后把座位状态从锁定改成已售，用状态条件更新防止同一锁被重复消费和重复出票。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="v3J53txnX0XYXWWeVa77C1">
+      <header data-page-node-id="gElJkiQFDwG4II0W5FSYMf">
+        <div data-page-node-id="3qyWHh8DIVbJGqQrGgTnWc">
+          <div class="eyebrow" data-page-node-id="FshZmLgSSXFBa57QaBmMvF">#19 · 第 1 次 · 后端 · design_coupon_claim</div>
+          <h2 data-page-node-id="emCAr8K7CarctFGeqGKuew">一万张优惠券同一时间开抢，每个用户只能领一张，你会怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="uhC1zUTWp70bGv0IvqQrfW"><b data-page-node-id="IJq6C6QB4Rlr0aMugdsiyh">design</b><span data-page-node-id="hE3Q4ybZCLvlPjJrW0M9N2">2.88s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="FBrxqCOQXhDFPfoSdEJuu5"><span class="chip ok" data-page-node-id="MEfCGmvixbCXPpQSbiT49W">分类正确</span><span class="chip ok" data-page-node-id="0i7kd9qQlWKh75uJ8gBhNh">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="fkULNn8MWYTbl9SBjM0w0v">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="d7wukyaLo8qHPSSx1LPRXI"><span data-page-node-id="ebkJRNAc7UwLDj6CTSjwtG">一句总览</span>这是秒杀场景下的超卖和一人一单问题，核心是用 Redis 原子扣减挡住流量、数据库兜底做唯一约束。</div><ol class="bullets" data-page-node-id="lLmBhLqe3JCSLp0AeyhHMB"><li data-page-node-id="hbOowtAF8ybFGJGIQo7oNI">Redis 里预热券的库存和已领用户集合，用 Lua 脚本把判断库存、判断是否已领、扣减、记录用户四步做成一次原子操作，避免并发超发。</li><li data-page-node-id="ROB4U4D4EHo7TXYXYdXLen">数据库对 user_id 加唯一索引兜底，即使 Redis 出问题重复请求也只会有一条记录写入成功。</li><li data-page-node-id="5Xk3oTAf3EgBaLV2Q1B7nd">异步落库：抢到资格的请求发消息队列，由消费者慢速写订单，前端先返回排队中，避免数据库被瞬时流量打垮。</li><li data-page-node-id="tZJZbGWCkO35v53BtY7faW">请求入口用网关限流加券ID维度排队，同一用户短时间重复点击直接拦截，库存扣到零后立即把后续请求短路掉。</li><li data-page-node-id="LDrBfEKLKP5VYqNGogRCBq">库存回补和已领用户集合设置过期时间，未支付超时的券通过延迟消息回补到 Redis，保持一致。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="Cf1GVge8BL9t4scbCkkcin">
+      <header data-page-node-id="GrmnwOzWcPBx6HqOGH35rZ">
+        <div data-page-node-id="HD5y4w09fHB9wg7ZJUwAQ5">
+          <div class="eyebrow" data-page-node-id="sulAwJvQ6x2C9C0Vpxavcx">#20 · 第 2 次 · 后端 · design_coupon_claim</div>
+          <h2 data-page-node-id="kUBlAINjJqpTdvcNnvQTc9">一万张优惠券同一时间开抢，每个用户只能领一张，你会怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="6SoMSAWp59JJAsINRgNoEU"><b data-page-node-id="DQtoBKlDy8pRmCcoVqZJQ4">design</b><span data-page-node-id="YasLhnAv0KASCB6wPLdcAj">2.54s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="dPfhrk9AYbDW7a0gNViRpJ"><span class="chip ok" data-page-node-id="DVpXTpCzXNQcYqEhxHhwvX">分类正确</span><span class="chip ok" data-page-node-id="uvWuJgKqVMjvSzM2xjJlPz">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="bm0nSrd27XVjcUaWUoGMfE">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="30HmqqQCbFZ6DuWnxH4Hjm"><span data-page-node-id="EWOpCpdCuB60hkOTV2WB1B">一句总览</span>这是秒杀场景下的库存扣减加用户限领，核心是把一次抢券建模成对库存的原子扣减和有唯一约束的领取记录。</div><ol class="bullets" data-page-node-id="qN3PK3vNIWXVmU8TwZ658Q"><li data-page-node-id="KMiw3UpCRFmFi6tjT4958E">Redis 里按券 ID 存库存计数，用 Lua 脚本把判断余量和扣减做成一次原子操作。</li><li data-page-node-id="yD5bxD2nMKmgYksAn6DPjZ">用户维度用 set 或按券 ID 加用户 ID 的唯一键做去重，保证一人只领一张。</li><li data-page-node-id="ZT1PO1Qz72YtJLoEihAhu1">扣减成功后写异步消息进 MQ，由消费者落库生成领取记录，避免同步打垮数据库。</li><li data-page-node-id="pZw5pCMYeoTZ62AA4TNM6A">领取记录表在券 ID 加用户 ID 上建唯一索引，作为最终幂等兜底，重复写入直接被拒。</li><li data-page-node-id="ajrtmfNPFOsGeAEaaePqAb">库存扣了但落库失败时用对账和回补做补偿，避免超发。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="6rdj3sZRbMQ5RAgVQKsZHH">
+      <header data-page-node-id="vj9p0cBXjeRISHcv7HRQeN">
+        <div data-page-node-id="iwYKLHWT6DNGlAhhsoIlPG">
+          <div class="eyebrow" data-page-node-id="CNE3pYNn8gvgm5bNoRfFRT">#21 · 第 3 次 · 后端 · design_coupon_claim</div>
+          <h2 data-page-node-id="are1KSjOEkE94WeRxd2Mvn">一万张优惠券同一时间开抢，每个用户只能领一张，你会怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="8EOCmjHVBTFyW76OulF7P3"><b data-page-node-id="aK8KMXhrfjgezuzmOVuB4P">design</b><span data-page-node-id="xws0Ja8tWcnlX8ZjEe5jIt">2.52s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="dM2ua9zqviLXOkuoun1Ktp"><span class="chip ok" data-page-node-id="zlGeYElcEe6PBgDyhOiLL0">分类正确</span><span class="chip ok" data-page-node-id="2EFpNtmyYHDf3eaY1RmhlC">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="5ROpkAKdSelm7jYg2GxBLp">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="nzVsIXuRcqOmiIc3OsJU4M"><span data-page-node-id="l95DRdzNL4ReItLb8KHYrb">一句总览</span>这是高并发秒杀里的库存扣减加用户去重，核心是把抢券收口到原子扣减，并且按用户维度做唯一约束。</div><ol class="bullets" data-page-node-id="9F2vhdp1PBc68vHfMWZiEp"><li data-page-node-id="NOlPpIRKwmAzLD3Gp5PHdT">库存预热到 Redis，用 Lua 脚本把「判断库存、扣减、记录该用户已领」三步做成一次原子操作，避免超卖。</li><li data-page-node-id="YHAbXmANBLUj7DUXp43Cz9">每个用户只能领一张靠两道防线：Redis 里用 couponId 加 userId 组成的 Set 或 bitmap 做快速判重，数据库再对 user_id 加 coupon_id 建唯一索引兜底。</li><li data-page-node-id="UtdR2klxyvaGGpPmMc5Npb">用户请求先过限流和资格校验，只有通过的人才真正去扣库存，失败直接返回已抢完或已领取。</li><li data-page-node-id="LAKb1G19gddSkm7aDdEDPU">扣减成功的请求不直接写库，而是发到消息队列异步落单，削峰填谷，队列积压说明压力过大要限流。</li><li data-page-node-id="zsFLBDHptAw94ZoFcuUjFY">数据库按 coupon_id 分库分表或者直接用库存行做 update stock = stock - 1 where stock &gt; 0 的乐观扣减，保证最终一致，同时给券设置有效期定时清理。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="存储" data-page-node-id="jBCs5369OMSmWqb8wIlFpk">
+      <header data-page-node-id="nEQcpYjBMMgaUFM0GPTq1F">
+        <div data-page-node-id="fBoKmnNNybZYc129VAPkio">
+          <div class="eyebrow" data-page-node-id="qhmgkBwawrhOkK717TOQps">#22 · 第 1 次 · 存储 · design_chunk_upload</div>
+          <h2 data-page-node-id="fJ1vATE0n2sNbukmWuOK1q">设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试</h2>
+        </div>
+        <div class="meta" data-page-node-id="432b7Em0Ek6q1KKWkhmCC1"><b data-page-node-id="Qg33PUtyS1mAy7OUtCLoXR">design</b><span data-page-node-id="VlJAzs54USkudgz4JaSAnQ">2.53s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="gyY3WzzsK3YGh8KcD6M14J"><span class="chip ok" data-page-node-id="ztBTCYPabH2HhvbKsct0Zm">分类正确</span><span class="chip ok" data-page-node-id="N1ujJ6o590sBMn6nGqaYE7">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="USwFH5f1xUT5BbEfGd4L62">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="MmLujGKZshDXtHD8FSybzj"><span data-page-node-id="sLEja1QSCSrsWO6vWB4AK9">一句总览</span>这是分片上传加最终合并，核心是把一次上传建模成可恢复的会话，并用文件内容哈希做秒传判定。</div><ol class="bullets" data-page-node-id="2pf2CVqlg3osA3p0FwtEzn"><li data-page-node-id="nrtE6geR6e2C353EIhurf2">上传会话表按 upload_id 记录文件哈希、分片大小、总分片数、已完成分片集合和过期时间，元数据落库，分片内容落对象存储。</li><li data-page-node-id="6iXCrcpegTI91gNGxxsBFJ">上传前先用文件内容哈希加文件大小查一次，命中已完成的文件就直接返回文件标识，实现秒传，不重复上传。</li><li data-page-node-id="ZqpEfYVCIULWL1CNh9g8rX">接口拆成创建会话、幂等上传单个分片、查询会话进度、校验后合并四步；分片上传以 upload_id 加分片序号做幂等键，重试覆盖同一分片不产生重复数据。</li><li data-page-node-id="k5qha7spja8aBYzeBkekQX">合并用状态机加条件更新，从 uploading 转到 merging 再到 done，只有一个请求能拿到合并权，避免重复合并出多份文件。</li><li data-page-node-id="xmd0utNB9B0ai9XECVwykW">失败靠客户端重传缺失分片，服务端提供未完成分片列表；过期会话由定时任务清理分片和元数据，防止存储泄漏。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="存储" data-page-node-id="v1CSjTFc47kqpN4fQBfAwb">
+      <header data-page-node-id="ZopO5f7211n6B5rv9DiPgx">
+        <div data-page-node-id="9XgMXrDjjSmtmFMTPgVXZb">
+          <div class="eyebrow" data-page-node-id="NXApPhEfhWTOjEqYG1DYls">#23 · 第 2 次 · 存储 · design_chunk_upload</div>
+          <h2 data-page-node-id="lbNu5iTEVMVlsDkDakW1uu">设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试</h2>
+        </div>
+        <div class="meta" data-page-node-id="xhcgsn9gmvEfHDoYgEHECC"><b data-page-node-id="tHdGoalvpnAdAyMGBZf8dx">design</b><span data-page-node-id="EZoBPEjDL58mV4B6YmyBdP">2.73s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="PSlVLAnIzADlwJOiu6C6tn"><span class="chip ok" data-page-node-id="c9w6P6qZTZJJOEozlAk945">分类正确</span><span class="chip ok" data-page-node-id="SCK0KkqxNR9EIM7YWDBXCm">应用显示 5 条思路</span><span class="chip warn" data-page-node-id="GMswuzM6gtat1KKbQGYhrj">模型原始 6 条，解析器截为 5 条</span><span class="chip ok" data-page-node-id="vI0uhiR4pWMENR0pQfXJ3N">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="evors4A9rPV4Znd5cPBIuP"><span data-page-node-id="c9IOT1BuUNgtEiQhC3HBuE">一句总览</span>这是分片上传加秒传加可恢复会话，核心是把一次上传建模成按 upload_id 管理的会话，用分片哈希做幂等和秒传判定。</div><ol class="bullets" data-page-node-id="SfCJjBz4FI723cY87bEPLH"><li data-page-node-id="Ne2KYBZNZY0nAWaZHhGHQ5">会话元数据落库，按 upload_id 记录文件 MD5、分片大小、总分片数、已完成分片、过期时间和状态，大文件内容不落库。</li><li data-page-node-id="NFzKOkP3ojCvv5VCuWPn1k">秒传在创建会话时判定：先查文件 MD5 是否已存在完整对象，命中直接返回可访问地址，客户端跳过全部上传。</li><li data-page-node-id="v6xYCInGloQEAyyZWTlscd">接口分为创建会话、查询已上传分片、幂等上传分片、校验后合并四步；分片先写对象存储，key 用 upload_id 加分片序号，重传覆盖不产生重复。</li><li data-page-node-id="ncQpGarKsGjKALUvDl2chz">断点续传靠查询接口返回已完成分片列表，客户端跳过；分片上传按 upload_id 加序号加分片 MD5 做幂等，同一分片重试只保留一份。</li><li data-page-node-id="pWdGwtXaedFGcEbYZtGyQp">合并用会话状态的条件更新防并发重复合并，合并后校验整体 MD5 与声明值一致才置为完成，失败分片由客户端重试并设最大重试次数。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="存储" data-page-node-id="vabSIbuLAFOowqUAdAOPNg">
+      <header data-page-node-id="acBi955AwEndKT82h4KuTN">
+        <div data-page-node-id="PjF4r1HUx1I9EeKrjN1ALv">
+          <div class="eyebrow" data-page-node-id="m37xT6mxUKFL3DHPi52PXY">#24 · 第 3 次 · 存储 · design_chunk_upload</div>
+          <h2 data-page-node-id="Mr3kt9GNWDQiN8P71UalF0">设计一个大文件分片上传功能，要求支持断点续传、秒传和失败重试</h2>
+        </div>
+        <div class="meta" data-page-node-id="6Bae5UwAimiISCxPwbmM8Z"><b data-page-node-id="zus8VfvmxvCaCZY37HXiE9">design</b><span data-page-node-id="zX7Tx7yMTwGxahiAHaiLJP">2.61s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="fFJA4teHuqFNnbXkCekrQY"><span class="chip ok" data-page-node-id="YqmyANJALwUWPDkTQuVSDt">分类正确</span><span class="chip ok" data-page-node-id="zZhJXkIhDIgQoZJeafTgYy">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="peusX02PE50skrzkqPFRiD">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="IGAakRIIxAQ1rWx6FQNZEs"><span data-page-node-id="7wxydScvs8udCS1bGEQEUW">一句总览</span>这是分片上传，核心是把一次上传建模成可恢复的会话：先问服务端文件在不在、再续传缺哪些分片、最后校验合并。</div><ol class="bullets" data-page-node-id="Bq5gax4K6CRf4Cw8L0tLi1"><li data-page-node-id="oA7t3y9vFcTrQV9L8Pankh">秒传靠文件内容哈希（如 SHA-256）在文件表里查，命中就直接在用户空间建引用，不复制实体，引用计数控制删除。</li><li data-page-node-id="S5RxytU20kkZ5MHENerSfU">分片上传会话按 upload_id 记录文件哈希、分片大小、已完成分片列表和过期时间，这是断点续传的唯一依据。</li><li data-page-node-id="N7j4NyRzAPtNmF3N6I7ifD">分片内容直接落对象存储，数据库只存元数据和状态；分片以 upload_id + 分片序号命名，重传同一分片天然幂等。</li><li data-page-node-id="ld3atD7bHx3PFY02WSYahY">分片传完做合并前校验：逐片校验和加整体哈希比对，防止中间分片损坏，合并成功后更新文件状态并清理临时分片。</li><li data-page-node-id="HfMAgDEgIRnxksOzQOjEY7">失败重试由客户端做指数退避并只重传失败分片，服务端合并用状态条件更新（如 pending 到 merging）防并发重复合并，超时会话由定时任务清理。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="即时通信" data-page-node-id="T2mK1fuCifu1QdO8XUMZJp">
+      <header data-page-node-id="ftTKtmV9QaPNvWYl4KoHXV">
+        <div data-page-node-id="bnwxXQwBFPG1OxmoG3DEzv">
+          <div class="eyebrow" data-page-node-id="zg98qBJGLjnsAFAUDwdAfe">#25 · 第 1 次 · 即时通信 · design_chat_unread</div>
+          <h2 data-page-node-id="u0s3tvKad8tMWXZoIHDtZU">聊天系统的未读数怎么设计，要求手机和电脑多端登录后最终一致</h2>
+        </div>
+        <div class="meta" data-page-node-id="ZFdz6oymJPhKdh3nt5lF5V"><b data-page-node-id="AEKJIVrwxAGZQjwOOJYCZZ">design</b><span data-page-node-id="I4h7OcPjLFLL3MWh5ovuK7">3.03s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="hX7neMWJ641Gj5yJFjgi7m"><span class="chip ok" data-page-node-id="mBX1VVH4PLK4ELZ8y2Qu5W">分类正确</span><span class="chip ok" data-page-node-id="jPin3YC0TuIXX6p1iuX5bL">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="uHyDV8HZNnXbsA7DcFGGSp">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="23s22EXFpOa7JJQh8cQL6M"><span data-page-node-id="L4nX88JTxICoqZech1XSQ2">一句总览</span>这是多端未读计数的最终一致问题，核心是每个会话只存一个递增的已读位点，未读数由最新消息序号减去已读位点算出来，不直接维护计数。</div><ol class="bullets" data-page-node-id="pipmccIiYnt3QtHqLBEREs"><li data-page-node-id="a1xQf0NVUcIjKkixWowu9T">按会话维护一个单调递增的消息序号 seq，Redis 里每个用户一条 Hash，字段是 sessionId 到该用户已读的最大 seq。</li><li data-page-node-id="GGLiZbfGBi53DVcBTCyF68">未读数不存储，读的时候用会话当前最大 seq 减已读 seq 得到；这样不会出现多端各自加减导致计数漂移。</li><li data-page-node-id="MdNANIaYOXDCQvjx6b0uSX">用户在某端已读时，只上报 sessionId 和 maxSeq，服务端用 Lua 脚本做 max 更新，保证只增不减、幂等可重放。</li><li data-page-node-id="JjiI0Ao8mPjJLi10e6WhJn">多端一致靠会话语义做收敛：消息落库带全局递增 seq，读位点用 max 合并，晚到的旧上报不会把已读回退。</li><li data-page-node-id="R73R43Iz7DRR1Ulkawtpac">把已读位点持久化到 MySQL 做冷备并设 TTL，Redis 丢失时可按最近位点重建，未读数偶发偏高只是不精确，不会错乱。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="即时通信" data-page-node-id="DfbWuYnpUIFQvF3NffTCN0">
+      <header data-page-node-id="N73cJ8uF9Go2ujkppWW2ru">
+        <div data-page-node-id="DSbt0nr8FjM6GmrozSiJw7">
+          <div class="eyebrow" data-page-node-id="5HjwV2RaqZjz3lAqzlkTRt">#26 · 第 2 次 · 即时通信 · design_chat_unread</div>
+          <h2 data-page-node-id="lECvltJKxxolsnTtabVHHs">聊天系统的未读数怎么设计，要求手机和电脑多端登录后最终一致</h2>
+        </div>
+        <div class="meta" data-page-node-id="fEjxcKdc0UL0boHQYBD2WL"><b data-page-node-id="1bKMe7Dnr98WX0EDh3jp9J">design</b><span data-page-node-id="vPXL1PnLCnTQlsRJfklJKE">3.30s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="HoIvr6mjHnHh73Fv262a1w"><span class="chip ok" data-page-node-id="9G6xFY36Frj2z17tm2MCbn">分类正确</span><span class="chip ok" data-page-node-id="KRIcXn8XUay3TE6w1xiuWB">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="cjvzJ9G3oZ5rqPTV7H9hfz">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="XCv9S8NuydQLVUoCJjvQbQ"><span data-page-node-id="XCrTjm13OBbDlebuKyIjPJ">一句总览</span>这是多端会话状态的一致性问题，本质是把未读数做成每个会话的一个可收敛的计数状态，而不是每个端各自累加。</div><ol class="bullets" data-page-node-id="GrI4FqSbfuvxS2D60S20MX"><li data-page-node-id="VYBLbOPwW1StpTkvOlA48U">核心模型：未读数以用户+会话为维度存一份权威值，每个端本地只缓存一份副本，Redis Hash 或一张 user_conv_unread 表都可以，key 是 user_id+conv_id。</li><li data-page-node-id="08TWoHibKadLhQOMoKXSGe">自增来源：新消息落库后按会话成员fanout，只给在线或离线用户更新权威未读数，用 Redis 的 HINCRBY 保证原子性，再异步刷回 MySQL 持久化。</li><li data-page-node-id="QZFGSbVILriyV6k2LXXUEw">多端一致：权威值变更后通过长连接推送给该用户所有在线端，消息里带上服务端时间戳或单调递增版本号，端上按版本号覆盖本地，避免乱序回退。</li><li data-page-node-id="iCGNbC5G74EIYjNGptBDy1">端上已读回执：某端打开会话时上报已读数或最后已读消息 ID，服务端用 max 或条件更新收敛为已读，再广播给其他端清零或同步。</li><li data-page-node-id="Q3oMjGPNa1FX8fbdGK1PXn">最终一致兜底：端重连或冷启动时拉一次全量未读快照，与增量推送的版本号比对，发现落后就整体覆盖。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="即时通信" data-page-node-id="I6ApG3tUmjGkw5uOh1xGOE">
+      <header data-page-node-id="rKun9OMvweV9wtAoNkhTM8">
+        <div data-page-node-id="pv0o4ygs7UXpWiHACsR2yp">
+          <div class="eyebrow" data-page-node-id="88rugKdqACzBVcJMy2VdFE">#27 · 第 3 次 · 即时通信 · design_chat_unread</div>
+          <h2 data-page-node-id="buHOubgkuz97v1t3DCDszP">聊天系统的未读数怎么设计，要求手机和电脑多端登录后最终一致</h2>
+        </div>
+        <div class="meta" data-page-node-id="JsW3fOQ2DWKoDH5HLVnTeI"><b data-page-node-id="rZ2AOYH6FsPORLSflo8m3q">design</b><span data-page-node-id="r2dzCUv4bspCp8GWIltaH7">2.78s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="t2Hc6edB7HUg3tF3GSGhcI"><span class="chip ok" data-page-node-id="EbUeCrLJ0KeNoejONa4o4X">分类正确</span><span class="chip ok" data-page-node-id="dVnoKRzyh3tt8DitrKWyAB">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="OFuD93EBStMccCiHz3d2tB">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="xI1fZYTlPTOAe1bV3xaSnq"><span data-page-node-id="nuEuM21t9n5GiuP0vZpnex">一句总览</span>核心是要做到多端最终一致——用版本号加乐观锁，每次变更带 version，低版本更新被拒绝后客户端重新拉一次当前值再重试。</div><ol class="bullets" data-page-node-id="Zru6AyO925ACEOEPYqIufS"><li data-page-node-id="vD1oJBlwTrlurtvIa6Yqlw">存储：按用户维度存未读总数和 per-conversation 未读数，user_id + conversation_id 做唯一键，version 随每次变更自增，服务端是唯一权威源。</li><li data-page-node-id="YjLdQcgbl3e5ySVABCog0p">更新：每次消息产生带一个自增 seq，未读变更在存储层以 version 做乐观锁，冲突就拒绝并返回最新值，保证多端并发不会丢更新。</li><li data-page-node-id="lwjuEWadVXBVrCnQ4W1FUZ">同步：各端本地缓存 version，收到的推送值 version 低于本地就丢弃，高于本地才覆盖，或用长轮询/WebSocket 推全量。</li><li data-page-node-id="MS0INzm6ATlyCXe4KIcCn1">已读处理：已读请求带 version，服务端比大小，只在 version 更新时才清零；多端同时读同一会话要按 version 取最大值生效。</li><li data-page-node-id="qpzz62IJcgkF7XofMVlhUh">一致性：用最终一致——更新走异步消息队列，各端订阅变更，服务端保留 version 使重放和迟到消息可被拒绝，收敛到同一视图。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="支付" data-page-node-id="sMyGmIh9fer4At7QMH79HJ">
+      <header data-page-node-id="F6hTIOmLbOcOn7s18h4Opo">
+        <div data-page-node-id="t4hOlYfTJm4NtWCnfHLDeu">
+          <div class="eyebrow" data-page-node-id="sYiz4Y4MVQpHmaNoU9h6vU">#28 · 第 1 次 · 支付 · design_payment_callback</div>
+          <h2 data-page-node-id="R3NARvdERuQhR8uKm5LUx3">第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制</h2>
+        </div>
+        <div class="meta" data-page-node-id="MHxGDaSQyd5lbCFjBVqAQf"><b data-page-node-id="kKKgRcFjm2wAZrIrEtT1xR">design</b><span data-page-node-id="YqsRpTK0KElwEvfy1zkZGP">2.84s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="dtdzIuJoHx3w5EVMoa9cCe"><span class="chip ok" data-page-node-id="Q18j2iT8BLNWA0AEDMpcnQ">分类正确</span><span class="chip ok" data-page-node-id="cVTdAXj91jEgdKFsF4b4j4">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="HAFeiLmlq2KDwkwKELxIrm">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="ZRqWj1D21yz5uNat283dj2"><span data-page-node-id="qjPdp3ELiw9tU3qYfr2p9E">一句总览</span>这是支付回调的幂等处理加对账补单，核心是把每次回调先落库去重，再用状态机收敛订单，缺口交给对账补。</div><ol class="bullets" data-page-node-id="8RIksPKyFwwabk5jpNH03J"><li data-page-node-id="q7jvsvOsaxexdFauFzGESt">回调先按渠道交易号建唯一索引写回调流水表，重复请求直接命中唯一约束丢弃，保证幂等。</li><li data-page-node-id="hqPZlVPU41faZ0qIeHH6xO">订单表带版本号做状态机流转，只允许待支付到已支付这类合法迁移，用条件更新挡住乱序的旧回调，只增不减。</li><li data-page-node-id="fhcr90FQ08mvD4TfZDbGM1">回调只更新状态并投递消息，发货等后续动作异步消费，避免在回调里做重业务被渠道重试拖垮。</li><li data-page-node-id="V9YF0zlqIGcoEWK2h1wKbw">丢失靠定时对账补：拉渠道账单比对本地订单，差异单走主动查询接口补单，而非等回调。</li><li data-page-node-id="87bBMvNdwHOy0MDIyw2CRe">回调入口限流加验签，异常落死信表告警，人工与自动补偿都有兜底。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="支付" data-page-node-id="QVXBvTJRFAEFs0qCHWNpAh">
+      <header data-page-node-id="d3fdxVLSu1qQvrHJ66CXNX">
+        <div data-page-node-id="nTT3Iy7DIahZcb8NXxEDmR">
+          <div class="eyebrow" data-page-node-id="sHYIsjB6Etc6NFlHkGaws4">#29 · 第 2 次 · 支付 · design_payment_callback</div>
+          <h2 data-page-node-id="8qGowyMgK3TIOHNnwsHNzB">第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制</h2>
+        </div>
+        <div class="meta" data-page-node-id="tbBk88HoMA83cHIfPSDZEX"><b data-page-node-id="Cg7yqcqnBlAup7E3VjszOR">design</b><span data-page-node-id="bzBDXVIY2cJIF3jhqoFIOz">3.31s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="kBGOXstZmLFUXBeJy2lr6q"><span class="chip ok" data-page-node-id="1UU2gCais7wCUCmwmZNV0R">分类正确</span><span class="chip ok" data-page-node-id="6W9PkQgu3J4z4MhPE1illb">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="Hq2ZwYoBnbl9b4gyoYeMHs">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="A51WN2CDHstnzn4zcrWvMm"><span data-page-node-id="wNi1KsNzsh5SZgagnh8PZu">一句总览</span>这是支付结果通知的幂等消费加对账兜底问题，核心是把回调当不可信事件处理，订单最终状态由主动查询对账决定，而不是由回调决定。</div><ol class="bullets" data-page-node-id="yxne1HUj1hrHiLBiq1ppMz"><li data-page-node-id="QscWuZhIutflM8US7O5b3t">回调入口只做验签和落库，把通知原样写进支付流水表，以渠道单号加业务订单号做唯一索引，重复通知直接冲突丢弃，先返回成功再异步处理，避免渠道重试打爆。</li><li data-page-node-id="BTXrfdrrm5zmPnsI6Z64Ob">订单更新用状态机加乐观锁，只允许待支付到已支付单向流转，更新条件带上当前状态，重复或乱序的旧通知因为状态不匹配自然失效；金额和商户号必须比对一致才入账。</li><li data-page-node-id="tpq62llq7z8iIqI4AnCYjs">主动补偿用定时任务扫待支付且超过一定时长的订单，反查渠道订单状态，查到成功就补一次幂等的入账，这是防止回调彻底丢失的主路径。</li><li data-page-node-id="nUm6w0Ofue3ySDGww8J9ZI">按天做渠道对账文件比对，本地流水和渠道账单双向平账，长款短款生成差错单走人工或自动冲正，覆盖乱序和丢单留下的残余差异。</li><li data-page-node-id="XmsBTRcjgoBmUJ7PYQtnvd">入账和后续发货、加积分用本地消息表或事务消息解耦，先落库再发事件，消费端幂等，避免回调线程里做重业务导致部分成功。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="支付" data-page-node-id="giwWhCol77Yfrch82HeDaA">
+      <header data-page-node-id="dFXAISrm7mLQpKG5HGCGEA">
+        <div data-page-node-id="AkdClxMEDTQAaJFoCxFElM">
+          <div class="eyebrow" data-page-node-id="QEJQiSHslADUUbPOgvFD9e">#30 · 第 3 次 · 支付 · design_payment_callback</div>
+          <h2 data-page-node-id="hEWBDCEKoITBgjNTL4p856">第三方支付回调可能重复、乱序甚至丢失，你怎么设计订单更新和补偿机制</h2>
+        </div>
+        <div class="meta" data-page-node-id="zIptoCPaTnIBCA9m9pA6FO"><b data-page-node-id="wUtzzmku5IHDgYQ1A07Z4n">design</b><span data-page-node-id="LWWlkDZBeIRfxVVwJgCLER">2.59s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="W3k6lKIeWkGLrapBVUne6k"><span class="chip ok" data-page-node-id="rSpeTercwb9sWfzWPuPVjn">分类正确</span><span class="chip ok" data-page-node-id="z9IcT2NhkNLeJ56jYfSzAT">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="oNwgSRoQ65CgAhnNtreakV">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="eSe4nMUJ1nT3jQFCRAf3by"><span data-page-node-id="4MCtfZFqITRChQbKMBBgwp">一句总览</span>这是支付回调的幂等处理加对账补偿问题，核心是把回调当成不保证送达的通知，状态收敛靠自己的持久化状态机加定时对账。</div><ol class="bullets" data-page-node-id="uD5UwZNpM6zW7MQjijPpP5"><li data-page-node-id="KeAze31zaQKq9UAegMeHrJ">按 out_trade_no 和支付流水号建唯一约束做幂等，重复回调直接返回成功，不重复改单。</li><li data-page-node-id="hyFAsXA6gMN6vadktREqJD">订单状态用状态机单向流转：待支付到支付中到已支付到已关闭，只允许合法跃迁，回调带的状态低于当前状态就丢弃。</li><li data-page-node-id="FriHUZw5KlJZ6O1IUFv2CU">回调里只落支付流水记录和改状态，发货、加积分、发券这些副作用改成监听状态变化的事件异步执行，保证可重放。</li><li data-page-node-id="PxR0nG7pAELKniV8CkpHvY">乱序用版本号或时间戳加条件更新解决，晚到的旧回调不改状态。</li><li data-page-node-id="mB7VgcxdGSJcyzMZoW6MP6">缺失用定时对账兜底，按时间窗主动调支付方查单接口，查到已支付但本地未更新就补状态，异常单进人工队列。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="PbC3eapyWjGNzc8myHb0Xo">
+      <header data-page-node-id="GDT0Sq8UyZQ6Y2MZl04tX4">
+        <div data-page-node-id="kp19ahobtfah5StB8So0ib">
+          <div class="eyebrow" data-page-node-id="9NbYH4IyuXG19WDqho3mnj">#31 · 第 1 次 · 后端 · design_leaderboard</div>
+          <h2 data-page-node-id="kOFC9HRjBZP4NqWBdFRMIp">设计一个每天重置的游戏排行榜，需要查前100名和任意用户当前排名</h2>
+        </div>
+        <div class="meta" data-page-node-id="5zu1YFcmovSmSNikFyDPoH"><b data-page-node-id="SMAk8jQNm1Fu3dLTbR1kR7">design</b><span data-page-node-id="GRcCW5qvdJff5dVZzpZZnb">2.53s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="lIIRVxCc89Dh9oxXp9lT1y"><span class="chip ok" data-page-node-id="RhLVZvl0ooBFFmnMMnh34m">分类正确</span><span class="chip ok" data-page-node-id="5P3nCdnGg7GkuP5L5HioML">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="zl7C0D2rgrGMF5rRU1GYP2">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="nwUzA4Rnqm5diTqbMfBgnq"><span data-page-node-id="O5QDbBVhipyz87XDACUDrp">一句总览</span>这是带过期语义的实时排行榜，核心是把一天的分数建模成按日期分片的排行榜，同时维护全量和当日两份结构。</div><ol class="bullets" data-page-node-id="7QvVMyOKm6vKqkBhVDNZjn"><li data-page-node-id="J30sE5E3HVt53B6nnNrRi9">用 Redis ZSET 存当日榜，key 带日期如 rank:20240101，member 是用户ID，score 是分数，ZINCRBY 累加分数。</li><li data-page-node-id="s7wCxh6vqGPcCXDzBd3Hyz">查前100名直接 ZREVRANGE key 0 99；查任意用户排名用 ZREVRANK，返回下标即排名，两者都是 O(log n)。</li><li data-page-node-id="0bLxB0FDwNI83BgmCWPSOv">跨天切换用按日期命名新 key，旧 key 设 TTL 自动过期，避免凌晨批量删除造成卡顿。</li><li data-page-node-id="UCzwtA3QA8eO2voSHEvSYe">分数相同时按达到该分数的先后或用户ID做二级排序，保证名次唯一且稳定。</li><li data-page-node-id="zJenJZqGicd6umMInwwfVG">全量榜和当日榜分开存，若需要历史某天的排名，按同样的日期 key 直接查即可。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="8ipclx9FxxlNjhGBrI8lPN">
+      <header data-page-node-id="p3PTdgnhAAwmt87gcWC7NB">
+        <div data-page-node-id="wr2NFr2HA5FkA3bgwhITV0">
+          <div class="eyebrow" data-page-node-id="9NMLUOXH2sngPv4oNCemn6">#32 · 第 2 次 · 后端 · design_leaderboard</div>
+          <h2 data-page-node-id="Cm03nuiJxEktnzvL0lGCs9">设计一个每天重置的游戏排行榜，需要查前100名和任意用户当前排名</h2>
+        </div>
+        <div class="meta" data-page-node-id="RK0Ge2DokP3sOWQmZdcGH4"><b data-page-node-id="jYtiekZ8vJyMvHbkIYUsaL">design</b><span data-page-node-id="PRrDp5uxEeiKgtSTwHRVtE">2.90s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="YxlUFVQwexZCSOzHhCrHf9"><span class="chip ok" data-page-node-id="4VUmeOQbtj5h83bqmTstul">分类正确</span><span class="chip ok" data-page-node-id="BltXcgyG1sYyId7UHma7vY">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="Gf67apVnG3NwcVUN1GT85B">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="7ecIpV92ShTOCmBAUJ3L7S"><span data-page-node-id="BaldtR3fodIzDfA5F8M7Is">一句总览</span>这是典型的日榜排行榜，核心是用 Redis 有序集合做实时排名、用定时快照落库做每日归档。</div><ol class="bullets" data-page-node-id="65WTRQpHDN81QEjusit5z2"><li data-page-node-id="vd2w4NYeb6mnHGdHK0zkrm">实时排名用 Redis ZSet，key 按日期分片如 rank:20240501，score 存分数、member 存 userId，ZREVRANGE 取前 100，ZREVRANK 取任意用户排名，都是 O(log N)。</li><li data-page-node-id="qDMOULVXpeHHMvVLwv8chi">同分按时间先后排序：把 score 存成 分数 * 10^10 - 时间戳 的复合值，越早达到该分数的人排在前面。</li><li data-page-node-id="sUkKvodShyEqXrZBdHHQDY">每天零点重置时把当前 ZSet 快照写入 MySQL 日榜表并设置 expire，新一天的 key 在首次写入时惰性创建，避免零点集中操作。</li><li data-page-node-id="QekYhYv4uu7YpRDghXJ0hJ">查询用户排名时如果当天 key 不存在，说明当天还没参与，需要从数据库兜底查历史，或用空 ZSet 返回未上榜。</li><li data-page-node-id="RehqFxZuABGq8K5n3PfGz7">高并发写入下用 pipeline 或 Lua 脚本保证 先更新分数再读排名的原子性，避免读写分离导致排名不准。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="后端" data-page-node-id="WeVKyARsc7oH7DDd1RiaP3">
+      <header data-page-node-id="o4xW9ZL7d8k4sFXF2w64Ol">
+        <div data-page-node-id="OUxPHHOeeeuQcROlV4PFfM">
+          <div class="eyebrow" data-page-node-id="pnKVSHLzVMUmaFnAj9Nw9T">#33 · 第 3 次 · 后端 · design_leaderboard</div>
+          <h2 data-page-node-id="qTo9sqbWeFo0jmD7uyBkPB">设计一个每天重置的游戏排行榜，需要查前100名和任意用户当前排名</h2>
+        </div>
+        <div class="meta" data-page-node-id="yzc545I5WLtLRapGYT8BrJ"><b data-page-node-id="DMMCgNbnf2fSL8TN01dCeB">design</b><span data-page-node-id="jaq56Gl2BccTCygsF84xYA">3.04s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="gZTHRt9xqnDujvax08dwTU"><span class="chip ok" data-page-node-id="CwUSI2yseD9Kk7pw1aM92H">分类正确</span><span class="chip ok" data-page-node-id="aF6FeFV2pubuuiMEU5avbp">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="7ktBzv4X1ABkmAyxuqky85">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="Qs2HMO4lcfaFuGurEJYuGV"><span data-page-node-id="We5zOQk5LOL4GOIxl7Ji7S">一句总览</span>这是典型的日榜问题，本质是按周期分桶的有序集合，核心是用 Redis 的 ZSet 按天做 key，排名查询走 ZREVRANK，过期交给 TTL。</div><ol class="bullets" data-page-node-id="YT2roheUxCM7NEoC8xpA9E"><li data-page-node-id="0ew1z4sqYWwQxtBCr9iddn">按天分 key，比如 rank:20250612，用 ZINCRBY 加分、ZREVRANGE 0 99 取前 100，过期时间设 48 小时自动清理历史榜。</li><li data-page-node-id="nvmo7QLtjSXZG89HzBsoQ9">任意用户排名用 ZREVRANK 拿 0 基下标加一，复杂度 O(log N)，分数相同时按用户 ID 做次级排序保证名次稳定。</li><li data-page-node-id="ABKosjzSCHrZIi3YfsfhuJ">实时榜直接读 Redis；如果要扛住高峰期读压力，用 ZREVRANGE 的缓存或者分层结果,只缓存前 100 名。</li><li data-page-node-id="CRGZAlEL6TYe74bgAKDSGV">零点重置靠 key 天然切换，新一天第一次写入自然生成新 key，不需要定时任务批量删除,避免零点抖动。</li><li data-page-node-id="lBqKq7Jkbom5dEPPzkUvjM">要保留历史榜单或做发奖，异步把当日结果落库到 MySQL，主键用日期加用户 ID，Redis 只做在线服务。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="网关" data-page-node-id="tUKiIFVO2daH6Wio2GbQVu">
+      <header data-page-node-id="jXENsTpsBPAhGJpC1QhjZ4">
+        <div data-page-node-id="dNevb9pcgJNQgbVRAeJkMk">
+          <div class="eyebrow" data-page-node-id="0TKY9lKZNKBFISWRDiz302">#34 · 第 1 次 · 网关 · design_rate_limit</div>
+          <h2 data-page-node-id="rPBZdOThCXa6okNarBjHUm">多实例服务要限制每个用户每分钟最多请求100次，这个限流功能怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="vJPYDRdUH21FxshdANXl2Y"><b data-page-node-id="wD23ZeQcxGiXpkQ6oIBgDb">design</b><span data-page-node-id="AwbF5lggZE5EsSVj7kaKpn">2.64s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="vjNM0kDlKLC1jBUAOiVSoJ"><span class="chip ok" data-page-node-id="iqsbdnTHzxDUZhzCJBppEQ">分类正确</span><span class="chip ok" data-page-node-id="c5SoGfmaaEdHgztKd5ARrL">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="EnosdBJZqN6tg2Ac6H4BYu">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="j73oIibfljRBe5ulZOpxbD"><span data-page-node-id="0KwuXVLrdU6tsWW3bJ9Ztv">一句总览</span>这是一个分布式限流问题，核心是把单机令牌桶换成以用户为维度的共享计数，用 Redis 做中心存储。</div><ol class="bullets" data-page-node-id="lMCGfoNlO903gREKaIVSro"><li data-page-node-id="C1UHmLgeAmRl8QCjCQAyvr">按 userId 加时间窗口做 key，用 Lua 脚本在 Redis 里原子地读-判断-自增，避免多实例之间读改写竞态。</li><li data-page-node-id="mtkJsGFd5BSvdYn6HF10qQ">每个实例请求到达时先查 Redis，超出 100 次直接返回 429，不把压力透传到下游服务。</li><li data-page-node-id="SVNnn6rAEDFliFA8D8lkIH">窗口 key 设 TTL 自动过期，比如固定窗口就是 60 秒，滑动窗口用 zset 或分段计数减少临界突刺。</li><li data-page-node-id="GjbFrKZg4eUkc8ONpP071Q">Redis 不可用时要有降级策略，比如本地令牌桶兜底或直接放行，保证限流组件本身不成为单点故障。</li><li data-page-node-id="1fUklgVAhsHvsdce0Farqf">限流维度可以扩展成 userId 加接口或 IP，规则和阈值放配置中心，方便动态调整而不用重启。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="网关" data-page-node-id="RDTWdARKvyb6mg1cKBHrQk">
+      <header data-page-node-id="1qog2y3XO8n8eAESW6HD4E">
+        <div data-page-node-id="mLmFYHWzAGw93f35vAaxor">
+          <div class="eyebrow" data-page-node-id="Ud3T1IHAsT7Q6WspRXDZi6">#35 · 第 2 次 · 网关 · design_rate_limit</div>
+          <h2 data-page-node-id="krlrqIqXf1uifwTkxeGunc">多实例服务要限制每个用户每分钟最多请求100次，这个限流功能怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="wAiF7hYpInXCGd0U1etDnA"><b data-page-node-id="0f7Srv0c5DmgElM9F9jEpl">design</b><span data-page-node-id="3jWNte5ZB7ebxcshwzoZkP">2.31s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="sXBZUccLRmLmMM8uyZRajj"><span class="chip ok" data-page-node-id="R3CgzrD6aHrmKYAL2m3tfG">分类正确</span><span class="chip ok" data-page-node-id="magLlZxFwbMVBuuHuctzxn">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="8g4KgO3NGgenLEX9D93ypQ">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="MTyA9pfu4ztcJoSaF8VNnN"><span data-page-node-id="k3z2lwEcS3GsRpaxsKCcBN">一句总览</span>这是分布式限流，标准做法是用 Redis 存共享计数器，多实例拿到同一个全局状态。</div><ol class="bullets" data-page-node-id="zKu2Sr4g3rpsRFKzRCRQlR"><li data-page-node-id="n9fz2EcGGF30N085lJENRU">以用户 ID 加当前分钟为 key 做固定窗口计数，INCR 后第一次调用设置 60 秒过期，计数超过 100 就拒绝请求。</li><li data-page-node-id="e2Iv4pDMsJ0J6ax3wBilSk">计数必须原子执行，用 Lua 脚本把 INCR 和 EXPIRE 合成一次调用，避免实例崩溃或并发导致 key 不过期。</li><li data-page-node-id="T5w3KRVudAZLQbUwvqYYQr">固定窗口会有跨分钟突刺，两个窗口边界可能通过接近 200 次请求，要平滑就换令牌桶或滑动窗口。</li><li data-page-node-id="H6wiOHzur4oJVaJ4cNaniy">Redis 不可用时要提前定策略：本机内存限流降级放行或直接拒绝，不能让所有请求打到后端。</li><li data-page-node-id="aJ53sADq6fqSWh6WKjSVDx">超出限制返回 429 并带上 Retry-After，转发的 X-Forwarded-For 只信任可信网关注入的值。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="网关" data-page-node-id="pXM5dcVkXJiewR3kjXEFpp">
+      <header data-page-node-id="l7rutKwPLXHJ1GkyEHgAnn">
+        <div data-page-node-id="NNbmnxcJJQ8Z7KOMo2SHC6">
+          <div class="eyebrow" data-page-node-id="dLAWgaJxOTKdCurv4GpB2i">#36 · 第 3 次 · 网关 · design_rate_limit</div>
+          <h2 data-page-node-id="DKKtdE2LZseKF0Nw86ypsb">多实例服务要限制每个用户每分钟最多请求100次，这个限流功能怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="qTtSn20s7BIAT5McNzwA3s"><b data-page-node-id="GCdFg9vyKokSjubSZDkQwk">design</b><span data-page-node-id="1hl02aG5JD5yGsj2nhIyXL">2.72s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="IXpaj5bqp2d1A9lCgY6Jbp"><span class="chip ok" data-page-node-id="JdUjKml1I7b9hJ1Cb00ghk">分类正确</span><span class="chip ok" data-page-node-id="F1GxBqtCkkrrQEggsAw6CB">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="6c8z6cnbEAjC0hg6epZ9LC">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="2CPP4HnuGH1uQR8usrqYMQ"><span data-page-node-id="A9L7H147BGxDnzv3zua7mv">一句总览</span>这是分布式限流，核心是把&quot;每个用户每分钟100次&quot;做成一个多实例共享的计数器，而不是每个实例各自记一份。</div><ol class="bullets" data-page-node-id="3WzK3f5kqk90uDcSx1pAeO"><li data-page-node-id="W0sfIuN3zkWNBXk0Zsw2jy">计数状态放 Redis 中，key 用 user_id 加分钟窗口标识，多实例共读同一份数据，本地计数会因实例数变化而失真。</li><li data-page-node-id="GY8hp6fJQv7AuBiTLidN7G">窗口选择上，固定窗口用 INCR 加过期实现简单但有临界突刺，滑动窗口或令牌桶更平滑，代价是多存一点时间戳或令牌状态。</li><li data-page-node-id="HLD4q3EO8gFtF8PAYCuN66">原子性靠 Lua 脚本把&quot;读计数、比较阈值、写回&quot;合成一次操作，避免并发下的超卖。</li><li data-page-node-id="1QmXwsA2c5oiDYBH6kXc78">限流判定结果要明确返回 429 和 Retry-After，同时让调用方知道是拒绝还是排队。</li><li data-page-node-id="zLqQ0HRHwcbPqWNKpbxjVc">Redis 不可用时决定降级策略：本地兜底限流放宽阈值，还是直接放行保证可用性，这取决于业务对超限的容忍度。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="发布系统" data-page-node-id="z5EcOlrFPq6bUz9BPhBYEW">
+      <header data-page-node-id="Dh3I8V81U3EaWnhgGFH3HR">
+        <div data-page-node-id="C51Iyl3fz5dbn1chTf2j7G">
+          <div class="eyebrow" data-page-node-id="QIfdVxixiTwKcCvEl12msG">#37 · 第 1 次 · 发布系统 · design_feature_flag</div>
+          <h2 data-page-node-id="H77QBoJ3HGuczLQG3I2rv2">设计一个灰度开关系统，能按用户百分比放量、指定白名单，并支持一键回滚</h2>
+        </div>
+        <div class="meta" data-page-node-id="fkYkVA97Dw0tz4WjcUmnsY"><b data-page-node-id="B0LH18F7EVBEDAqhSqLd3T">design</b><span data-page-node-id="pxuVmT1BRJz0EKlFzwhEBp">3.21s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="PEsK01uAG7Fx3CKpkz5C9i"><span class="chip ok" data-page-node-id="b6YYYH1x9KeFhDAyCJd8Gc">分类正确</span><span class="chip ok" data-page-node-id="PVeWW94blvz7qJBwOTSNI7">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="EN8iftKTC47gFA93fk7BJn">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="1CZXTksCwUBVhsndAcYv1K"><span data-page-node-id="H9XOF34W6oJtskIGBfi9BT">一句总览</span>这是特性开关（feature flag）系统，核心是把每个开关的投放规则外置成配置，让业务代码只问一次“这个用户走不走新逻辑”。</div><ol class="bullets" data-page-node-id="YjuCPbSciTHrTpFQFESkZV"><li data-page-node-id="TFO2zyiNPsECe5YKR0mghs">规则模型：每个开关存一份规则列表，每条规则由匹配条件（用户 ID、百分比区间、白名单、地域等）和开关值组成，按顺序求值，第一条命中的生效；白名单本质就是优先级最高的一条精确匹配规则。</li><li data-page-node-id="ZlCM3bDMPYtZtVCW9H23Fq">百分比分桶必须稳定：用 userId 和一个固定 salt 做哈希取模落到 0-9999 的槽位，再和阈值比较，这样同一用户每次请求结果一致、不同开关之间又不相关，扩量只是调阈值不洗牌。</li><li data-page-node-id="28y6dD37zfDHKaYAx7aScZ">配置持久化：开关和规则落在配置库并全量缓存在服务端本地，推送用长轮询或 watch 通知失效重建，保证读取是内存操作、不依赖调用下游。</li><li data-page-node-id="o8sJDB5MYH5iT3VwGB9ySD">回滚：把开关状态改成全关并推一条高优先级规则，一次配置变更即可生效；每次变更记录操作人和前后快照，回滚就是把这版快照重新发布。</li><li data-page-node-id="S7gPYYL31hbu9qQ1OoG3YI">版本与安全：配置带单调递增版本号，客户端按版本更新避免乱序覆盖；变更走审计日志，同时监控开关状态和实际流量比例是否一致，防止规则写错导致全量放量。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="发布系统" data-page-node-id="wIHJivB6QFb1erg17oc2Gn">
+      <header data-page-node-id="6K7StRiYM6B8KvBNHEWyy6">
+        <div data-page-node-id="K4RQ20ekCRSZFBSqSBtnsz">
+          <div class="eyebrow" data-page-node-id="1fq8aiGFbhIc35FvpdYVpY">#38 · 第 2 次 · 发布系统 · design_feature_flag</div>
+          <h2 data-page-node-id="p3l2nV4194xTDFGMPbvgy4">设计一个灰度开关系统，能按用户百分比放量、指定白名单，并支持一键回滚</h2>
+        </div>
+        <div class="meta" data-page-node-id="CqHQtztXAgM7xuyQcbz6MO"><b data-page-node-id="PQzzlJ0g9xrvYg7IA1vMrM">design</b><span data-page-node-id="S2yjVhBMDoHEn5PivlLMRm">3.14s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="g7r0o7x0ukgoXevbsCbCAp"><span class="chip ok" data-page-node-id="ikJCZoDboXrOSsz6rB1NYN">分类正确</span><span class="chip ok" data-page-node-id="9rg7exCftZXZ1AwFMxLWLW">应用显示 5 条思路</span><span class="chip warn" data-page-node-id="BzXG2dI66GMDZsL9ZIofHt">模型原始 6 条，解析器截为 5 条</span><span class="chip ok" data-page-node-id="8QnYxbpN1fcLly6rdM4Mt4">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="ay6BsvlHL4iV1wwl0IM3N7"><span data-page-node-id="oGIoAtfK8o9SvlcKF8ZFSz">一句总览</span>这是特性开关加流量分桶系统，核心是把开关规则实时下发到调用方，由调用方本地做确定性分桶，让同一个用户始终落进同一桶。</div><ol class="bullets" data-page-node-id="cogmniKNirepEW3OXmoJ7W"><li data-page-node-id="L3IllyyI3MTEZdq7OYO2VA">开关表按 flag_key 存状态、白名单、放量百分比和版本号，规则变更时版本号自增。</li><li data-page-node-id="vpxxu4BUUtFnkVX9LeXC7r">调用方本地缓存规则并提供 SDK 接口 isEnabled(flagKey, userId)，不能每次请求都同步查库。</li><li data-page-node-id="lzyX46oODE8HbrXEUpqTfV">分桶用 hash(flagKey + userId) 对 100 取模，结果落在百分比阈值内即命中，保证同一用户结果稳定可复现。</li><li data-page-node-id="9lrM4fNxwwt9HrZOaqAwMt">判定顺序是先查白名单再加分桶，白名单命中直接返回 true，全量开关命中直接返回 true。</li><li data-page-node-id="B73FFQj94bF41ae05YIoUt">规则通过长轮询或推送实时下发给调用方，回滚就是恢复上一版本并广播，SDK 收到新版本立刻替换本地缓存。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="发布系统" data-page-node-id="rtmP9mX84PeaVOcgCDRfBa">
+      <header data-page-node-id="Mo4pOSpZtwZfw4wwvbbv7P">
+        <div data-page-node-id="ExgWprTsOZrqz0cY3tqhsr">
+          <div class="eyebrow" data-page-node-id="ObutjaGkIBPxIDjYxZZg15">#39 · 第 3 次 · 发布系统 · design_feature_flag</div>
+          <h2 data-page-node-id="YD6u1FJu5RkyXl8gBH2coM">设计一个灰度开关系统，能按用户百分比放量、指定白名单，并支持一键回滚</h2>
+        </div>
+        <div class="meta" data-page-node-id="hmQdozgpERzkey3PGJUNLu"><b data-page-node-id="v6LgxeWsS2wfO532gtk4hU">design</b><span data-page-node-id="6IczA3yGKPBctSc5Uo9gAG">3.22s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="GXFEUYCgcEoCs2fasTB6o5"><span class="chip ok" data-page-node-id="ABnFOC5a3EPkiAKG0zK4q1">分类正确</span><span class="chip ok" data-page-node-id="jyxrSDKpNEqp3MmUYtNyqz">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="wI1cyT97lNx4lppzJucBer">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="HIFahjoSVJbBaDZcfX9V7S"><span data-page-node-id="Cc2ABCBunRYG71CaElZ8iB">一句总览</span>这是功能开关（feature flag）系统，核心是把每条开关做成带规则的配置，每次请求按规则实时求值，配置本身可快速改并立刻生效。</div><ol class="bullets" data-page-node-id="Zm8q0upOxihXZEvmtDfELg"><li data-page-node-id="AfF7y6iao1YP8YURBeADRU">开关配置按 flag_key 存一份规则：全局状态、放量百分比、白名单、黑名单、以及最后修改人和版本号；配置存数据库或配置中心，SDK 本地缓存并靠推送或轮询在秒级拿到变更。</li><li data-page-node-id="oTaWBqUpYy8L28cBtu7bBp">灰度分桶用稳定哈希：对 user_id 加盐做哈希取模 100，落进小于阈值的桶就开；同一个用户每次结果一致，百分比就是放量比例，改阈值即可逐步放量。</li><li data-page-node-id="ypH2thzodNL4y6i3eIlBrh">求值优先级固定：开关先看总开关，再判白名单命中直接放行，然后判黑名单直接关闭，最后才走百分比分桶，顺序写死保证结果可解释。</li><li data-page-node-id="ZKPZcMiPa6ff5dpDoBbmCs">毫秒级回滚靠改配置而不是发版：关掉总开关或把百分比置 0，配置中心推送后各节点在秒级生效，同时保留版本号和历史记录以便审计和快速回退。</li><li data-page-node-id="IOUCgwxDhhJH2DZCO1FDbo">降级和兜底：配置拉取失败时用本地缓存的最后一份配置，求值异常默认按关闭处理，避免开关故障放大成业务故障。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="搜索" data-page-node-id="QmBJBHg70y9EGcq3qZZBAQ">
+      <header data-page-node-id="HowAg93yMbOx7CZXwqh5FL">
+        <div data-page-node-id="4PxTdkfvi4lWpcyn7DdVCu">
+          <div class="eyebrow" data-page-node-id="zuOlsjSjWZGuEeQpNHl8pn">#40 · 第 1 次 · 搜索 · design_search_suggest</div>
+          <h2 data-page-node-id="rDiWzOtcAaqpF0Ynj0nQDU">搜索框输入前缀时要在10毫秒内返回热门联想词，这个功能怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="0xZGdiGULpi2ZR315CAer6"><b data-page-node-id="fbi4sDd05zjJD0SDem66Qk">design</b><span data-page-node-id="g8DIaZjqPKhLu2vMgZ4wAI">2.75s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="WT3e7rIOHTHfFgWh9NwtyU"><span class="chip ok" data-page-node-id="1hTingZIlJeISI1hcI9oZr">分类正确</span><span class="chip ok" data-page-node-id="KdcY3oLzr9LaJ0YXm0NEgJ">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="liiPNg1g7TKxt1WQ9TsEpE">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="Pqo1LhgzlMBFNWe9ZsniSn"><span data-page-node-id="dp7112JVc8S5Wbh5cRunJZ">一句总览</span>这是搜索自动补全（autocomplete/typeahead），核心是把前缀补全从在线查询变成内存里的前缀树查询。</div><ol class="bullets" data-page-node-id="3vnbOxr8u5ECn5Qw6oQi1W"><li data-page-node-id="jCQChmCrNwb1ZrVbeu3dn7">用 Trie 存词表，每个节点保存经过该前缀的 top-K 热词，查询前缀时直接取该节点的缓存列表，不做实时聚合。</li><li data-page-node-id="F1QvPEqCXvbrcdmn9lLvt8">热词榜离线或准实时从搜索日志统计，按小时或分钟更新，更新时重建或增量刷新 Trie 节点的 top-K。</li><li data-page-node-id="VBG6W574t3lfo0Hs2TF0qP">Trie 常驻内存并预加载，多实例部署，查询走本地内存不经过数据库，保证 P99 在 10ms 内。</li><li data-page-node-id="Mi7HOC8ctHyGIdGj5lCSnR">用 Redis 或本地缓存兜住热点前缀，加节流和结果长度上限，防止长前缀和恶意请求打满内存。</li><li data-page-node-id="OgePnQx9V0JnQcnu0sKL97">更新用双缓冲切换：新版本 Trie 构建好后原子替换，避免更新时读到半成品数据。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="搜索" data-page-node-id="8lvLDb7htJmJ1QTGz05jNR">
+      <header data-page-node-id="KtnNtZErmnZ4zM9CZGBpFw">
+        <div data-page-node-id="9OWFTnlINgEwNkDSne18YC">
+          <div class="eyebrow" data-page-node-id="N52uJDgVztidJo3UzRaj1R">#41 · 第 2 次 · 搜索 · design_search_suggest</div>
+          <h2 data-page-node-id="ZxtHeHVFFh7DdWvxWJJzvu">搜索框输入前缀时要在10毫秒内返回热门联想词，这个功能怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="sBwzB69bGfLVCeSJQa8APf"><b data-page-node-id="4XT8bQDUa2alBx9uFRpwwA">design</b><span data-page-node-id="0Dc9Td75bSV6ihFVEaMBXf">3.07s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="XczyFMbrPYgva3tLLHe8NS"><span class="chip ok" data-page-node-id="wxooomxn6QuqiJsAaxuP0l">分类正确</span><span class="chip ok" data-page-node-id="rYpBHLC6fIpPQk9Veo1PP0">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="5BmNaj7X1SHM2Ght7LY3CI">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="teyAUhl7KawjFh36GifoF9"><span data-page-node-id="H6Kkt2ctJjDXFPTrJV24RT">一句总览</span>这是搜索建议（typeahead）的经典场景：把前缀到候选词的映射预计算好放进内存，查询路径上只做一次查找和少量排序，不上数据库不实时算。</div><ol class="bullets" data-page-node-id="BW4ERMxg5hM4S8IOKNOy4u"><li data-page-node-id="q6QOyxbFxhDA7NF9oGEnln">离线跑出前缀词典：对热词按前缀逐层聚合，每个前缀只留 Top N 个候选和权重，控制在百万级前缀内。</li><li data-page-node-id="HsNwifIEmRB2IK520jYijR">词典加载到本地内存（或 Redis 做多机共享），前缀查询走哈希或有序数组二分，单次查找是微秒级。</li><li data-page-node-id="j4U2f81dTA2gVIubUvZw1c">权重用近期搜索日志滚动更新，离线周期重建或增量推入，保证热词能跟得上。</li><li data-page-node-id="fPN7AltCqwoU4fEPDH0oND">热门前缀和无结果的前缀在接入层单独缓存，抗住热点流量并避免穿透到词典。</li><li data-page-node-id="0miOduBreCIaVaT4YxfZtU">10 毫秒里包含网络和序列化开销，所以候选词控制在 10 个以内并压缩响应，超时可降级返回上周期词典。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="搜索" data-page-node-id="hqm8ATM15XA2o3bagX3JYs">
+      <header data-page-node-id="m4uY2KxEExUC16VqrRpMqk">
+        <div data-page-node-id="AeM51QrurSIWMew9UOCe6U">
+          <div class="eyebrow" data-page-node-id="XT2D1mu2f2ZShr082sxjrD">#42 · 第 3 次 · 搜索 · design_search_suggest</div>
+          <h2 data-page-node-id="BY6wdxc7qHvZR8L8xzzVH8">搜索框输入前缀时要在10毫秒内返回热门联想词，这个功能怎么设计</h2>
+        </div>
+        <div class="meta" data-page-node-id="oHMDoMN7WHh8bKZZ3wJ3AT"><b data-page-node-id="7ipbf4ohF6DOUbOYcK307X">design</b><span data-page-node-id="TWLzMUCTXzwUTsA7TNoATN">3.09s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="3ENBDopWFzBz8C7Q5LzExz"><span class="chip ok" data-page-node-id="A5isA7u7exh8AWyN7sECas">分类正确</span><span class="chip ok" data-page-node-id="OEMQDxLoHxWkf1LLY5LdDn">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="dRy9fcWnfW11ui9d3iXUsI">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="mUAWcBB9sSXFnBs3AFMZrd"><span data-page-node-id="AHyVNSFk1RxFeB6h9uiB2v">一句总览</span>这是搜索建议（typeahead）问题，本质是用前缀树加缓存把前缀到热词列表的映射预计算好，请求只做内存查找。</div><ol class="bullets" data-page-node-id="G9eyMGoswpmiT8QIEac5vv"><li data-page-node-id="m2gaIhBA9PBsZqSlEPgAvl">把查询日志按小时或天聚合出热词榜，用 Trie 按前缀存储 Top-K 联想词，周期离线重建到内存，保证查找是 O(前缀长度加K)。</li><li data-page-node-id="7l27Lfl7wbu6pktMvUWzzI">前端输入加 debounce 约100毫秒并丢弃乱序响应的过期结果，避免每个按键都打请求，实际 QPS 能压到原来的几分之一。</li><li data-page-node-id="a8bOGeAWzs1q5jDJbF7qmO">本地缓存挡绝大多数请求，命中返回；未命中的结果写回缓存并设短 TTL，让新热词分钟级生效，长尾前缀走兜底数据源。</li><li data-page-node-id="4s9NKuJtJGSctFHHjFPuRJ">每个节点存 Top-K 而非全量词，建树时按热度剪枝，单机可放百万级前缀，内存靠前缀共享自然压缩。</li><li data-page-node-id="jKSGXgaKkFlywoHks4UorM">统计与检索分离：日志聚合和建树走离线链路，在线节点只读，重建时用双 buffer 原子切换，避免请求打到半成品。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="内容" data-page-node-id="cN9KJAO1VAcIIr1xUSLS0i">
+      <header data-page-node-id="Fxa8ABpm7DD3Ok60oWk4K1">
+        <div data-page-node-id="esFFBjO8QTftVdYtb3gr8t">
+          <div class="eyebrow" data-page-node-id="czqKHeg7bhUWmVkqxB4U9I">#43 · 第 1 次 · 内容 · design_comment_thread</div>
+          <h2 data-page-node-id="6OXIWBk7pVCyONDm7CiyKh">设计评论和二级回复功能，还要支持热度排序、删除和分页</h2>
+        </div>
+        <div class="meta" data-page-node-id="1S64mA9JdjX2W6zsKVUEJ5"><b data-page-node-id="rtvq0AHfB98kXTKVFuRp2k">design</b><span data-page-node-id="qEaGrbHnmYaj9jzbB7cLTF">3.39s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="ypXof4RWFOFXEehDlicAAU"><span class="chip ok" data-page-node-id="zieG0JZIRyGllFCuPZkmHD">分类正确</span><span class="chip ok" data-page-node-id="Ue16iCWKYjSgX8pgAFJNyy">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="ImZfTk2U21AUxmQaRGzZEm">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="by7FolZGSaywS6oXf1Jj9W"><span data-page-node-id="a0yzKcdqIu8oFUyPMxwmXz">一句总览</span>这是经典的树形评论模型，核心是把无限层级拍平成一张带路径的表，用路径做排序和分页。</div><ol class="bullets" data-page-node-id="77VYDW9EYPhgVm6o2vbYzh"><li data-page-node-id="u8BOHsmwlVvKPuk82xDect">评论表用 parent_id 加 root_id 和 path 记录层级，只允许两级：顶级评论 parent_id 为空，回复挂到顶级评论上，回复的回复归到同一个 root_id 下并以 @ 标注被回复人。</li><li data-page-node-id="EA7YmV3TC0er0GS9UMP6w9">持久化存 comment 表，字段包含 id、root_id、parent_id、content、user_id、floor、状态和创建时间，按 root_id 建索引，删除用软删除标记状态，保留楼层回复结构不塌陷。</li><li data-page-node-id="2ime7NSID4sYjrnShwywDD">热度排序在写入时算一个 score，比如点赞数除以时间衰减，按 root_id 加 score 建联合索引，顶级评论按 score 分页，每页再一次性把这一页的回复查出来，避免 N+1。</li><li data-page-node-id="VUHXnSIBwj0MLY41VIADxV">分页对顶级评论用游标（score 加 id 作为 offset）而不是深翻页，回复数量多时只展示前几条加热度展开，展开时用时间或热度游标续拉。</li><li data-page-node-id="xOIfOqrzbBlyrKiPJhb5ma">删除做权限校验后用软删除，如果删的是顶级评论而其下还有回复，前端展示为已删除但保留回复，硬删除由异步任务按保留期清理。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="内容" data-page-node-id="JwLs0AK0slPMliUzz8zfeH">
+      <header data-page-node-id="jBGr7FxJ63iScOAmwQWnw5">
+        <div data-page-node-id="bDMGWNB9FD27tGTNyeJ5rG">
+          <div class="eyebrow" data-page-node-id="xL0wpT9I2YQQmCbvcDwO34">#44 · 第 2 次 · 内容 · design_comment_thread</div>
+          <h2 data-page-node-id="IUCRRpYhnN4ovkTwXcNhnL">设计评论和二级回复功能，还要支持热度排序、删除和分页</h2>
+        </div>
+        <div class="meta" data-page-node-id="exZEKiXGM9mfuVxv4dx5im"><b data-page-node-id="grF4wUa9bGcAAmVdPVQysN">design</b><span data-page-node-id="NTS7iu5dnTHZ7BaMZwkZct">4.01s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="9VFN4D5pHmssDCkDcpou2D"><span class="chip ok" data-page-node-id="mFjdjIL8bMjecpAGHCLFlB">分类正确</span><span class="chip ok" data-page-node-id="lwCKtDMgYi2y0fgflO7Wne">应用显示 5 条思路</span><span class="chip warn" data-page-node-id="IKBuRoDAAx4JdT0rXsZRS9">模型原始 6 条，解析器截为 5 条</span><span class="chip ok" data-page-node-id="tLKpNLhmU2Phgex4eFAorz">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="BC0yQjNKp69SxAPeMVh2uc"><span data-page-node-id="SwXOLI50yTGkGwNtuZNsHZ">一句总览</span>这是经典的树形评论系统，核心是用邻接表加物化路径把树压成可排序的扁平结构，避免递归查询。</div><ol class="bullets" data-page-node-id="ugVXp6dl869H15ln97jFBB"><li data-page-node-id="oVuEiigWqKUBkbb46Chh0B">评论表用 id、root_id、parent_id、path（如 /1/5/12/）和 depth 记录归属，root_id 指向顶层评论，二级回复按 root_id 聚合成一页。</li><li data-page-node-id="7MdD5OPaPrLGo962wjfsQ5">查询一级评论按热度分页时，先用 root_id is null 加排序字段走联合索引拿 20 条，再用 root_id in (...) 一次性取这些评论下的回复，避免 N+1。</li><li data-page-node-id="OSjCD4wKIw5Qo4ngnbYNsC">热度用独立的 hot_score 冗余字段，由点赞数、回复数按时间衰减公式算出来写回，排序直接走 (root_id, hot_score) 索引，不要每次查询现算。</li><li data-page-node-id="WoPmZnqjzrCy2Stbek9NOc">删除做软删除，状态字段置为 deleted 保留占位，若该评论还有子回复则展示“该评论已删除”，删整个树时按 path 前缀批量更新。</li><li data-page-node-id="Cwe9POtq9fWsqr0a2RBzJ8">分页用游标而不是 offset，一级评论按 (hot_score, id) 做 keyset 翻页，回复按 (root_id, created_at, id) 取全部或用游标，避免深分页性能塌陷。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="内容" data-page-node-id="Juhs8Jf0lWGShqeuH8cs3k">
+      <header data-page-node-id="9i8MYj18fxgIWjiNo6nSg7">
+        <div data-page-node-id="SxHFzwDNabwI3OEDAWFSlU">
+          <div class="eyebrow" data-page-node-id="QE9yEORHRs9Kzd44PBysNJ">#45 · 第 3 次 · 内容 · design_comment_thread</div>
+          <h2 data-page-node-id="SC7CF6pOjON1LVmF8ZT7wL">设计评论和二级回复功能，还要支持热度排序、删除和分页</h2>
+        </div>
+        <div class="meta" data-page-node-id="Am66thlOrxIPKDjL1qqqxL"><b data-page-node-id="O6ibsw5gh3hIc0umgVFnZu">design</b><span data-page-node-id="evaOKxFchxXOkWhs6rzbE2">2.87s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="RuoZGg9FPRRZtyYH2QuYA9"><span class="chip ok" data-page-node-id="S4VkGKEB1vL04kXo9Xc3DW">分类正确</span><span class="chip ok" data-page-node-id="pjiUu9I6A7GPCfgzz5i9Vb">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="Cz0OGuQOxCt11ZBVxfhPPC">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="d9pEKLKPMGhaY1DHBGGmOk"><span data-page-node-id="lRrA8ejWAxg0GgZ1qMMyCH">一句总览</span>这是典型的树形评论系统，核心是把无限层级拍平成带路径的扁平表，再按热度排序分页。</div><ol class="bullets" data-page-node-id="HdPs7N2GFgFAc4mK1eI15M"><li data-page-node-id="8k6ALeZUF3bxPt6vLGDpIB">评论表存 id、root_id、parent_id、path、depth、点赞数、回复数和创建时间，path 用祖先链前缀在回复时一次性写入，查某条评论的整棵子树就是一次 path 前缀匹配，不用递归。</li><li data-page-node-id="kAaQNVbPmd9b9FLN5jbvDI">热度排序用点赞数减反对数加回复数、再按时间做衰减的公式算出的 score 字段做索引，写入时更新或定时重算，分页用 score 加 id 的游标而不是 offset，避免新评论进来导致翻页重复。</li><li data-page-node-id="CUCuyEbaHKgGZueeYgnDjQ">二级结构限制展示层只渲染两层，parent_id 为空是一级，其余的 path 只存到一级祖先，这样每条一级评论的回复就是一维列表，排序和分页都只在这层做。</li><li data-page-node-id="vocl35prrKjMIupQKMou3o">删除默认软删，把内容置空并标记 deleted 状态，保留节点和路径以维持子回复的树形结构；有子回复时显示已删除而不是整条移除。</li><li data-page-node-id="LWLbURrCwDLkoe31d9GIdu">分页按一级评论游标翻页，每条一级评论下的二级回复单独分页，接口分页参数带上 root_id 和 cursor，避免一次拉出全量回复。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="调度" data-page-node-id="uLAn2l38sKvk3AtIHIjAl2">
+      <header data-page-node-id="tUHy0fSIf9T7D4hL968679">
+        <div data-page-node-id="ouJMWxQmJzJPfLR8ZXrCT5">
+          <div class="eyebrow" data-page-node-id="fz0ldnSUgW6HYCd9jX5MZD">#46 · 第 1 次 · 调度 · design_job_dag</div>
+          <h2 data-page-node-id="nw9kgfDJbqQCGvKp2FXk0N">设计一个有任务依赖关系的批处理调度系统，失败可以重试但不能重复执行成功任务</h2>
+        </div>
+        <div class="meta" data-page-node-id="L4RtPsbFEKr6KeHh6lwaHP"><b data-page-node-id="6PsIbyWG3mg6sSYCwO6VZI">design</b><span data-page-node-id="zN1QHBoFo2QZuCsK48RXgB">2.94s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="NRhUDRl5s5VoySvZtzp18z"><span class="chip ok" data-page-node-id="z6Nt6eajTij7Fy135C0OFy">分类正确</span><span class="chip ok" data-page-node-id="bR24BrBdb9qo6m7ju3AfjZ">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="8NJUCMXTNb5tPDCT03XuR6">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="Hpctp3EK6wsI5iAd56RRmn"><span data-page-node-id="UFoiaUq10qoYB6wpj0Sx03">一句总览</span>这是带依赖的 DAG 工作流调度，属于有向无环图任务编排加幂等执行，核心是把每个任务的执行状态持久化，让重试只对失败分支生效。</div><ol class="bullets" data-page-node-id="VUKXZ7rlGE7wkew0Bcc4jO"><li data-page-node-id="Z0h1ucV1Rr485E329bOzrT">任务定义表存 DAG 结构：task_id、依赖的任务列表、重试次数上限；调度前按入度做拓扑排序，只有所有前置任务成功才把当前任务置为就绪。</li><li data-page-node-id="6hZAb8MuXvCMorZEJWD0Si">任务实例表按 batch_id + task_id 记录状态（等待、运行中、成功、失败）、尝试次数和幂等键，这个表是判定是否重复执行的唯一依据。</li><li data-page-node-id="dcKlN59TNWmvmkFOSUN1Yh">每个任务执行前用条件更新把状态从等待原子地改成运行中，只有更新成功的那一个调度器实例才真正执行，避免并发重复触发。</li><li data-page-node-id="oH6wq4SMt9FFej7DmOZNYS">任务是幂等的：执行结果先写临时位置，成功后原子提交并记录幂等键，重试时发现该键已提交就直接跳过，不重复产生副作用。</li><li data-page-node-id="0fbB259h3TzrBSTlNDb5AN">失败任务只重试自身和它的下游，已成功的任务不再进入调度；超过重试上限的任务标记为终止，并阻塞其下游，由人工或补偿逻辑介入。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="调度" data-page-node-id="H77hsUKRrIadd80UonqvsY">
+      <header data-page-node-id="zv7SsDz7kg21wEjMcb8TJ0">
+        <div data-page-node-id="FD3WqWkIB2Ff0t0ZfT4eCP">
+          <div class="eyebrow" data-page-node-id="SmVXXJ6P070uDOwvwO1OZg">#47 · 第 2 次 · 调度 · design_job_dag</div>
+          <h2 data-page-node-id="YitlsEfIP73zHJi0Xsztv2">设计一个有任务依赖关系的批处理调度系统，失败可以重试但不能重复执行成功任务</h2>
+        </div>
+        <div class="meta" data-page-node-id="ySSmA6CO0D7X97wHTawUdc"><b data-page-node-id="4IIBpWY228yOrLwCTKw5si">design</b><span data-page-node-id="I4fc0wsOfSlQyECcfWDVdW">2.82s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="TWDORBTrcS79AlnBTnntg4"><span class="chip ok" data-page-node-id="4vrzku59JiMzhNhmamnqcC">分类正确</span><span class="chip ok" data-page-node-id="xRC4WXOosxSkQti5HJq3Cg">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="kYrbfpCGC10cUnqgSqguLQ">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="hJ5TrXgt3YBsmDYzk3J6KP"><span data-page-node-id="jT3pFUatfqDhQwFI2mzMNh">一句总览</span>这是带 DAG 依赖的工作流调度，核心是把每个任务做成幂等且状态可持久化，失败重试时只重跑未成功的任务。</div><ol class="bullets" data-page-node-id="lCXVpimE1rwfmrgWnMM3cX"><li data-page-node-id="3FbQKfel4yPmu4AZvAfJoY">用 DAG 描述依赖，任务表按 task_id 记录所属 job、上游依赖、状态（待执行/运行中/成功/失败）和重试次数，状态落库保证调度器重启后可恢复。</li><li data-page-node-id="2NuNiABwLEMJY9CBBUuBBd">依赖就绪判定：只有所有上游状态为成功才把任务置为可调度，失败或运行中的上游会阻塞下游。</li><li data-page-node-id="KiXurUDe423XPJRreZocLv">重试要幂等：成功任务直接跳过，只有失败和超时任务重新入队；每次重试用同一个业务幂等键，防止重复写入。</li><li data-page-node-id="42lXUOoCnrnT7N2XdoUaFM">调度器采用拉取或抢占式加锁，用条件更新（状态从待执行改成运行中）保证一个任务在同一时刻只被一个 worker 拿走。</li><li data-page-node-id="cNJ45LN3By7JotWFPJF7qB">失败处理区分可重试和不可重试，超过最大重试次数后按策略标记 job 终止或触发告警，避免无限重试。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="调度" data-page-node-id="DZZcRGnqS4QcqCruo1SgRY">
+      <header data-page-node-id="0X1RLGQuBF099hwSYnSRvk">
+        <div data-page-node-id="jZHg4k5F0PjzJDUvM1j9TE">
+          <div class="eyebrow" data-page-node-id="llG79C5Aru7xOVhXI4DiRu">#48 · 第 3 次 · 调度 · design_job_dag</div>
+          <h2 data-page-node-id="zKogCTy12hoUtIS4GBJNXt">设计一个有任务依赖关系的批处理调度系统，失败可以重试但不能重复执行成功任务</h2>
+        </div>
+        <div class="meta" data-page-node-id="SWrfqnN0OZYnCYEy7P2Chz"><b data-page-node-id="VZznO6IxSWULwpULuWjSex">design</b><span data-page-node-id="zPrpgVB4g6KKGwPVHCn2mQ">2.65s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="49JJ2OvRWVxuPYbU0Rdwi2"><span class="chip ok" data-page-node-id="wnwFHapDHNQFTozbcqD7zC">分类正确</span><span class="chip ok" data-page-node-id="DWBELYPMyhCXu4d5JaWLeR">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="2wAol93qEapt4DScmjSFCB">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="unJC0J36EAGmgnS3Si9Hwz"><span data-page-node-id="QFln273exK6JknNJ8om8id">一句总览</span>这是带 DAG 依赖的任务调度，本质是工作流引擎加精确一次语义，核心是把每个任务节点的执行状态持久化，靠状态机加幂等来控制重试。</div><ol class="bullets" data-page-node-id="dQK4F9G0CnQ8u1GckqWK0Q"><li data-page-node-id="2OWlxGDs8u6gMLmSXHDJq2">任务和依赖用一张 DAG 表描述，节点记录状态（等待/运行/成功/失败）和重试次数，调度器只跑前置全部为成功的节点。</li><li data-page-node-id="aepOt15Itr9KPkDG6IooGD">每次执行生成一次 attempt 记录，用 task_id 加 attempt 做幂等键；成功的任务状态置为终态，重试只重跑失败节点，绝不重跑已成功节点。</li><li data-page-node-id="CdK49dxp8HPmlazEV7WM7k">任务本身要幂等：用唯一键或 upsert 落结果，这样即使出现重复投递，重复执行也不会产生副作用。</li><li data-page-node-id="AAMrFW9spJTReB6HjgkDmp">调度器用持久化队列或数据库轮询拉取就绪任务，节点完成时原子地更新状态并唤醒下游，避免并发重复调度。</li><li data-page-node-id="yhvaCuNoFmrAdU75FFaVFd">依赖失败或超过最大重试次数时，把整个下游标记为阻塞并告警，而不是无限重试。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="权限" data-page-node-id="qkhEWjby4vEcUwjbSw3l3b">
+      <header data-page-node-id="CphJeyvqeKeIbv55B9GtDW">
+        <div data-page-node-id="9EW5OEz6veWW7uF2Ay4WSd">
+          <div class="eyebrow" data-page-node-id="NP2p9vnnjzcaJIEs92Wrm6">#49 · 第 1 次 · 权限 · design_album_share</div>
+          <h2 data-page-node-id="m1km8Sp7tnPScBj9iBSkeD">设计相册分享功能，链接可以设置过期时间和访问密码，用户还能随时撤销分享</h2>
+        </div>
+        <div class="meta" data-page-node-id="CrLj8gvGVhuhychRzapiDH"><b data-page-node-id="qKM9Pdw8kBFThpXDS3YDlu">design</b><span data-page-node-id="6IJRjx5bDrymEN3SfUt0J3">2.56s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="cohQuPpaUsbiDwnEJXqJZo"><span class="chip ok" data-page-node-id="CBm6y2AhWOQiCtL3YRHGPW">分类正确</span><span class="chip ok" data-page-node-id="BBHOa6Z0TleWPqXZ4bKbKD">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="U5wmoxIFc0EGnQcZWhoxd7">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="ZRxRF8dDurvEQ4HtuQqFpz"><span data-page-node-id="lvW5uQyPT14M0bQJg3Yzpi">一句总览</span>这本质是带过期和鉴权的资源访问令牌问题，核心是把每一次分享建模成一条可撤销的授权记录。</div><ol class="bullets" data-page-node-id="qvnIvHI46xuK0edi9ZU7DX"><li data-page-node-id="NZmUuuKdCNusB0kz0TY0C6">分享记录表以随机 share_id 为主键，存相册 ID、过期时间、密码哈希、状态和创建者。</li><li data-page-node-id="bEqEYTIYgksoBNXblXeiu9">分享链接用不可猜测的 token 而不是相册 ID，密码只存加盐哈希，校验通过后再签发短时访问凭证。</li><li data-page-node-id="ZPHhR5nv1F9xGAVSA518q1">相册内容本身仍走原鉴权链路，分享只授予该条记录的读权限，不复制图片也不放开相册整体权限。</li><li data-page-node-id="MZRlj6Qgd8uBBJoapXZNbD">撤销和过期都是把记录置为失效，判定在每次访问时做，已发出的凭证 TTL 设短，避免撤销后仍能访问。</li><li data-page-node-id="mfSYJ9fZtFnhVIvyEqx08J">撤销做幂等更新，过期记录由定时任务或访问时惰性清理，分享的访问不写回主相册。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="权限" data-page-node-id="D0ANANFFy6uTzgAqCxAqwK">
+      <header data-page-node-id="MlSHOhfLj529NSEei9ooCl">
+        <div data-page-node-id="V7viAxIypBHMSQMK94vwqN">
+          <div class="eyebrow" data-page-node-id="nxJDSc17sTx8dRkJTz3ruy">#50 · 第 2 次 · 权限 · design_album_share</div>
+          <h2 data-page-node-id="bHicjVlDm4WKIfKVqyLBMQ">设计相册分享功能，链接可以设置过期时间和访问密码，用户还能随时撤销分享</h2>
+        </div>
+        <div class="meta" data-page-node-id="kW3nAqBXwwARw1bJHqesC4"><b data-page-node-id="Fz78sTkXYVil4IvCvzoqCK">design</b><span data-page-node-id="a9gdKxFeOVGsi223rTjsHF">3.27s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="P3AEAdHNjHIGVOmApyczVA"><span class="chip ok" data-page-node-id="LcoCWql0NA1UzGHNrdOa5t">分类正确</span><span class="chip ok" data-page-node-id="kGvLjGZBwAASQQbw0DeLPn">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="TatHqGtidJf0uDcfw4A3IV">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="8td6fhTurpXuoOP9FehHBL"><span data-page-node-id="A7rjPxN3SUpUuMr0sk8zyW">一句总览</span>这是带访问控制的分享令牌方案，核心是把每次分享建模成一条独立的可撤销记录，而不是直接暴露相册 ID。</div><ol class="bullets" data-page-node-id="maIEFHc67BfVYNC1onGVrC"><li data-page-node-id="udg8nyvFEYOJJNv5xKuvW0">分享表按 share_id 记录相册 ID、密码哈希、过期时间、状态和创建者，相册 ID 只存在服务端。</li><li data-page-node-id="gBAnC4J1VUqXHQM1XF4nSL">对外的分享链接只带一个高熵随机 token，服务端用 token 反查记录并校验过期与撤销状态，不暴露任何自增 ID。</li><li data-page-node-id="QAZOeDV1n9OR7DZIrQI1Jn">访问密码用 bcrypt 或 argon2 加盐存哈希，校验通过后再签发一个短时效的访问凭证，避免每次请求都验密码。</li><li data-page-node-id="eA4FiNl0lUqEoIhjOGSbxR">撤销就是把记录状态置为 revoked 并让缓存失效，token 立即失效，历史访问日志保留用于审计。</li><li data-page-node-id="3t35q7rSzZ0VduDTRSx3O8">下载或图片接口同样先校验 token 鉴权，不能在拿到真实图片地址后绕过分享权限直连。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="权限" data-page-node-id="WmElBH0ABov9qTrhcJ3XGW">
+      <header data-page-node-id="OF7KOrpIIT4GCUXuW5ek4L">
+        <div data-page-node-id="0drYRKTBClzYRTrJiLRwgF">
+          <div class="eyebrow" data-page-node-id="Bekr69blETGxZ28bUshOvq">#51 · 第 3 次 · 权限 · design_album_share</div>
+          <h2 data-page-node-id="Vm7xvmYfmu2V6FSgNu0JO5">设计相册分享功能，链接可以设置过期时间和访问密码，用户还能随时撤销分享</h2>
+        </div>
+        <div class="meta" data-page-node-id="TjeGLwiT49cDAd94tKJbmd"><b data-page-node-id="gT928OkexSHPkERaaXD0hN">design</b><span data-page-node-id="YjvEDxxsblwV0oxc2MG81d">2.62s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="thWnpeF3POoyma895kFEUB"><span class="chip ok" data-page-node-id="jxovuPUDYSWo5yLOqCFZUP">分类正确</span><span class="chip ok" data-page-node-id="gVzF2h2Iy0uImuBq23bcFo">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="aTd2vpuMYAbDQaN2chofWC">提到状态存储</span></div>
+      <div class="overview" data-page-node-id="ppGeI4Vc3Dqoa5oNySmrAu"><span data-page-node-id="Hqki1YxjDeeZ8GLsq9SZei">一句总览</span>这本质上是带时效和鉴权的令牌化访问控制，核心是每次分享生成一个独立、可撤销的分享记录，访问时校验它的状态而不是校验用户身份。</div><ol class="bullets" data-page-node-id="SWCZRFszk18T2hCmgAcVuW"><li data-page-node-id="VbVNho2ZoEqoliePCzsGWR">分享表以 share_token 为主键（随机不可枚举，如 128 位），记录相册 ID、密码哈希、过期时间、状态（有效/已撤销）、创建者。</li><li data-page-node-id="p2Dtwju7daw8A0DFM9aBAf">密码只存 bcrypt 哈希，不存明文；无密码时直接放行，有密码时校验通过后再用短期签名换取访问凭证，避免每次请求都传密码。</li><li data-page-node-id="baxiEgYor1DEUyGy0UHw0w">校验顺序固定：先查 token 是否存在且未撤销，再判过期，最后验密码，任一失败统一返回相同的失效提示，防止枚举。</li><li data-page-node-id="mm2UHllgZcQZOzhMxnDWVQ">相册内容走对象存储的私有读，用后端签发的临时 URL 下发，绝不把原始文件地址直接暴露在分享链接里。</li><li data-page-node-id="ieM1zSFk5o0xl0rYmGENVx">撤销即把状态置为已撤销并记录时间，同时把 token 加入短期缓存黑名单，保证多实例下立即生效。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="本地组件" data-page-node-id="drpMMgTDUdZxevAMtVP8Az">
+      <header data-page-node-id="uOpwG8EtNOnpTIsxt34bGQ">
+        <div data-page-node-id="VDdeGIA2zsHu6iUiKX01Xn">
+          <div class="eyebrow" data-page-node-id="g7qVZAr0jRJmZ51mzxZQZ3">#52 · 第 1 次 · 本地组件 · design_local_lru_ttl</div>
+          <h2 data-page-node-id="xaE4Ly109qvLoeUyX4UHUR">设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求你写代码</h2>
+        </div>
+        <div class="meta" data-page-node-id="DrfilagP87pKrUSGXQUUCT"><b data-page-node-id="oiu710t9AvzBlPn9tdFbSq">design</b><span data-page-node-id="8EIGqhbWgt5PGEav8BE9bQ">2.91s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="HweWaH2cGmC2lUX1yyF7JE"><span class="chip ok" data-page-node-id="XCUJ9w9hT6dxVaElHfNKg1">分类正确</span><span class="chip ok" data-page-node-id="XkufQtHeZwfEu4VMp5KiM1">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="PEBdDkPrH70HEAKesaVrgA">未强塞数据库</span></div>
+      <div class="overview" data-page-node-id="rOKY6kdTRXC9WH3FSCBam6"><span data-page-node-id="YQgPo703Dbo8SGzWJx7Mz0">一句总览</span>这是带 TTL 和并发控制的 LRU 缓存，核心是用哈希表加双向链表保证 O(1) 访问，再用分段锁或分段结构把并发冲突降到最低。</div><ol class="bullets" data-page-node-id="G6PCbnvUq08S3dlbsgtOY5"><li data-page-node-id="swP1ZMSMbB6fKC3C8CIKpE">数据结构用 HashMap 存 key 到链表节点的映射，双向链表按访问顺序排列，get 命中后把节点移到头部，put 超容量时淘汰尾部节点,这样 get 和 put 都是 O(1)。</li><li data-page-node-id="XnLbnegH89MfraRXcOkJYj">过期时间在每个节点上存 expireAt 时间戳，不用定时器扫描，而是惰性删除：get 时先判断是否过期，过期就删掉返回未命中；再加一个后台线程或淘汰时的定期清理，防止死数据占满内存。</li><li data-page-node-id="5O1WgfdpD7YPw81aM2ednN">并发控制按并发量选：低并发用一把 ReentrantLock 简单可靠；高并发用分段锁，把 key 哈希到 N 个段，每段一把锁加独立 LRU 链表，把锁竞争降到 1/N。</li><li data-page-node-id="TtdiLwynIHsqFZhuWXje56">淘汰和过期删除都要在持有对应段锁的情况下做，链表指针的修改不能裸奔；读操作可以用读写锁或把访问顺序更新放到写锁里，避免读到半改的链表结构。</li><li data-page-node-id="Ub7H4ni2iVOuLwGdTDQjfV">容量和 TTL 是构造参数，不追求跨进程一致——进程内缓存就是本地副本，多实例之间本来就可能不一致，接受这个前提再谈性能和命中率。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="本地组件" data-page-node-id="xUC4iPHcGyEUJjSi0J3xxW">
+      <header data-page-node-id="0g8KR3pF4b8W2H9ZUdMcWh">
+        <div data-page-node-id="JK8ZftoGdK19PA3vvpT99I">
+          <div class="eyebrow" data-page-node-id="MaDVXeCeqGMgzZqiJUCic7">#53 · 第 2 次 · 本地组件 · design_local_lru_ttl</div>
+          <h2 data-page-node-id="RytN1xKnAnp4EoXKGfhNFn">设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求你写代码</h2>
+        </div>
+        <div class="meta" data-page-node-id="FJ5U1EiU50CNfO9f5CuHhg"><b data-page-node-id="ELn50BIfhWZlesSe7PcFhk">design</b><span data-page-node-id="YQRPFN06tF5hlb2EBAoKfE">3.02s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="j9eSWDVQIDZS3CRGKzug59"><span class="chip ok" data-page-node-id="wSAqp1TSJWKnFWGE7L5idg">分类正确</span><span class="chip ok" data-page-node-id="d2jaCulEkAu2bPp7OfvD5d">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="eeI72uAdUUGce4UmKx1L21">未强塞数据库</span></div>
+      <div class="overview" data-page-node-id="E25ZDearEFbCmRsPabPAtQ"><span data-page-node-id="jUWuU7Qj2NFAZGCTCElLJP">一句总览</span>这是带 TTL 的线程安全 LRU 缓存，核心是把哈希表和双向链表组合起来，再用分段锁控制并发。</div><ol class="bullets" data-page-node-id="zBx7dbjfAfgdE42PhiOl2z"><li data-page-node-id="vEhhT9uRwiZ865djl1oGXy">底层用 HashMap 存 key 到链表节点的映射，双向链表头部是最近使用的、尾部是最久未用的，get 和 put 命中后把节点移到头部，淘汰时从尾部删，读写都是 O(1)。</li><li data-page-node-id="akrJT7Pn1eLayyXt1612tH">每个节点除了 key、value 再存一个过期时间戳，惰性删除为主：get 时发现已过期就删掉并返回空，put 时遇到过期节点直接覆盖；再配一个后台清理线程定期扫尾部，避免过期数据长期占内存。</li><li data-page-node-id="23FmO6VLUXJclJDeHtZKb4">并发用分段锁，把缓存按 key 哈希拆成多个段，每段一把锁各自维护自己的链表和容量，不同段互不阻塞；只在计算某段的容量和 LRU 淘汰时才需要该段的锁。</li><li data-page-node-id="3h6skVA55Xmo6qcgJQJXow">Map 和链表必须始终处在同一临界区里更新，否则会出现节点被删了但映射还在的悬挂引用，所以删除和移动节点这两个动作要在持有段锁时一起完成。</li><li data-page-node-id="YkQvSaHkf17zfe1DoXbGkS">如果读多写少，可以升级成读写锁或者用 ConcurrentHashMap 加时间戳做近似 LRU，用命中率换吞吐量。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="本地组件" data-page-node-id="p1SVEgsZG1BnfKjIultO6m">
+      <header data-page-node-id="kCeVUL22dMilHDgbUCyldt">
+        <div data-page-node-id="ifGHQK4zTumuT5pjQ2sp5c">
+          <div class="eyebrow" data-page-node-id="2MqebPgNeGVqts2gZzl6qL">#54 · 第 3 次 · 本地组件 · design_local_lru_ttl</div>
+          <h2 data-page-node-id="g50yTkeaDJ47MDkpMZK8sC">设计一个进程内的 LRU 缓存，还要支持过期时间和并发访问，不要求你写代码</h2>
+        </div>
+        <div class="meta" data-page-node-id="fP9SSO6LGS82r9uEvNj7xU"><b data-page-node-id="4U66GhdqUgbZ2nhWwEJrR1">design</b><span data-page-node-id="kvBi34gHE0vJJWYQ8RseYB">2.79s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="PtwTBa7gSeCNqupHmYbWIb"><span class="chip ok" data-page-node-id="09G66EwXJYrPohUaqL6ZPD">分类正确</span><span class="chip ok" data-page-node-id="jojg3LgBCDON4yVn0so3rQ">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="adGrA2DlvHrEEn07G3pAnN">未强塞数据库</span></div>
+      <div class="overview" data-page-node-id="rLStjMyRUhSYA2VLYiU2Le"><span data-page-node-id="S8CGrqQbeaQ3gJnWpCf61g">一句总览</span>本质是哈希表加双向链表做 O(1) 的 LRU 淘汰，上面再叠过期时间和并发控制。</div><ol class="bullets" data-page-node-id="AWzEGIM0yfipKxtjjxesfq"><li data-page-node-id="0SlG0BFpKrsc0m0JtqL2Om">用 map 存 key 到链表节点的引用，双向链表维护访问顺序，命中就摘下来挂到表头，淘汰从表尾拿。</li><li data-page-node-id="H221bOjPts62NI1j9Dp2Th">每个节点带 expireAt 时间戳，读的时候惰性判断是否过期，过期就当未命中并删掉，再配一个后台线程定期清理冷 key。</li><li data-page-node-id="7RgeaLHleEqPZRbIPnDwpK">并发用分段锁或者 ConcurrentHashMap 加每段的锁，把链表操作限制在段内，避免一把全局锁把读也串起来。</li><li data-page-node-id="gdbG8EM7ZCiBPYqjx6NgC7">缓存内部状态本身就是容器进程里的内存结构，不落库，重启即失效，key 用业务主键保证跨请求命中。</li><li data-page-node-id="9wMcoZs5Qi1z1C1cqpT8la">容量上限和过期时间做成构造参数，满了先按 LRU 淘汰最久未访问的，过期只是提前失效不改变淘汰顺序。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="前端" data-page-node-id="FzaY9m7PO9sM3RaR5s2Ep2">
+      <header data-page-node-id="YtWEvkDmgYSRB5NUWb9xRH">
+        <div data-page-node-id="zpsFVS8BB52NnHwJ9HoncR">
+          <div class="eyebrow" data-page-node-id="PqmchlYL2fVnd5WyQm7fOX">#55 · 第 1 次 · 前端 · design_virtual_list</div>
+          <h2 data-page-node-id="6KAUHzqsFcNXZlp92DEIzB">前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件</h2>
+        </div>
+        <div class="meta" data-page-node-id="jNBZ6MZkdhQvAdoYIRnGJ7"><b data-page-node-id="wyemq2eKDkYBg4mUQfSivW">design</b><span data-page-node-id="M73nRx7zp6hBG9y3uV9x5e">3.39s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="58S3E3kQonCHhJu1QnIUSY"><span class="chip ok" data-page-node-id="cWVBFqvijYoIQCmYFtSlNx">分类正确</span><span class="chip ok" data-page-node-id="8i90GAfOabDMcOBH2S284y">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="Sk6HegAeR4sseNKzyv3qmr">未强塞数据库</span></div>
+      <div class="overview" data-page-node-id="dmo5i695sSvpBT0krBzQE8"><span data-page-node-id="6zgqg07A1ion4ClLxyM4K8">一句总览</span>这是虚拟滚动问题，核心是不按数据量渲染 DOM，只渲染视口内的可见项，高度不固定就让每项自己撑开并缓存实测高度。</div><ol class="bullets" data-page-node-id="uzhc9GvBZh8jOWEItXAaAJ"><li data-page-node-id="xKZ8QzPyjbs4TP1SrUR0fR">用 position 加 translateY 撑出总高度作为滚动占位，总高由已测高度之和加上未测项的估算高度累加得到。</li><li data-page-node-id="wUFTyS5GNsj89zaUOFm8bk">每个 item 渲染一次后测量真实高度，写进以 id 为 key 的高度缓存，滑动时按前缀和数组二分找到视口起点，再做前后各缓冲几条的 overscan。</li><li data-page-node-id="qeKjWhnjStn3wdk8gP3ITn">高度没测出来前用估算值占位，先给固定最小高度或骨架屏，避免滚动条跳动和位置回弹。</li><li data-page-node-id="7CZBjT5VdcE9GRVytH6Oiu">滚动用 requestAnimationFrame 或 IntersectionObserver 驱动，只更新可见区，重计算不放进滚动事件里同步做。</li><li data-page-node-id="ExFQG7POAy5pno7CLU5S6a">列表尺寸变化或缓存失效时按批重新测量，并用 key 保持项与数据稳定对应，避免复用时高度错配。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="前端" data-page-node-id="zGXpqJnWyBcKyEWmX0DpVN">
+      <header data-page-node-id="BkFZ6gKEw3XM0uS9cUwBGk">
+        <div data-page-node-id="NyaEcGyEyj13F0pjCxcvrF">
+          <div class="eyebrow" data-page-node-id="5SwxziiVqhjSAGWVtcNpU2">#56 · 第 2 次 · 前端 · design_virtual_list</div>
+          <h2 data-page-node-id="dLaem3tIyvWIdL90fpRxtM">前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件</h2>
+        </div>
+        <div class="meta" data-page-node-id="Kv4Qz5llFRN8KGiGc2NRl0"><b data-page-node-id="Ed5uZBspDE1xCpssYSkmul">design</b><span data-page-node-id="77goGAFgyHH6AAsFPbGJf6">3.39s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="eSTOErTpfszOoM4mRphN0d"><span class="chip ok" data-page-node-id="l4yKazlOakuoVWnLTT8sZR">分类正确</span><span class="chip ok" data-page-node-id="Cus0nAgCs0stBXf9PKrpKX">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="zM4XXh8UAg7pZHUIdd0NCz">未强塞数据库</span></div>
+      <div class="overview" data-page-node-id="rsdTYjH9XW8sL3f1paoRFg"><span data-page-node-id="BDZDfkcpWLY3chDkKFhx7h">一句总览</span>这是虚拟滚动加不定高列表，核心是用运行时的元素测量代替预估高度，并把测量结果缓存下来。</div><ol class="bullets" data-page-node-id="kqkjJdWLI8zKzBEGTNRl2j"><li data-page-node-id="IaZCFKQ4yIAAd1Mi2ZYWee">只渲染可视区加前后各一屏的缓冲区，滚动容器用一个撑满总高度的占位元素来驱动滚动条。</li><li data-page-node-id="eiO6LfAiLLVBVpLRQFBe6F">每个 item 渲染后读取真实高度存进缓存，总高度由已测高度加未测项的预估值累加，用前缀和二分定位起始下标。</li><li data-page-node-id="fSI5Ky9f2nmeVlwy1gXmBQ">滚动时按当前 scrollTop 反查应该渲染的区间，用 transform 把列表整体偏移到正确位置，避免白屏跳动。</li><li data-page-node-id="PlxLhc9GEZTBtE95OG1bUY">上下各留缓冲并处理滚动方向，快速拖动滚动条时用预估高度先兜底，测量完成后再校正偏移。</li><li data-page-node-id="KoYbsWL8byCcOVNXAPFg3K">高度变化时更新缓存和总高度，只重算受影响区间的前缀和，不整表重排。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="前端" data-page-node-id="I6QxEHGtTFGUGO8ySUd4aJ">
+      <header data-page-node-id="wi8zYem1ZKLmThxks2LHC4">
+        <div data-page-node-id="aPS9DLDUITBrrD2VmF03Lz">
+          <div class="eyebrow" data-page-node-id="d6lbZfnAIQJelGA8l8AaBd">#57 · 第 3 次 · 前端 · design_virtual_list</div>
+          <h2 data-page-node-id="WlsXpUtqEp5Ey1xgJ3DxnC">前端要流畅展示十万条高度不固定的数据列表，你会怎么设计这个组件</h2>
+        </div>
+        <div class="meta" data-page-node-id="E5BHo7pPV4baVuv3VBbkcX"><b data-page-node-id="DstqIJTNENyrZkYgGb55jM">design</b><span data-page-node-id="kaqLqZ1ekEsFWl2ZtPhX3S">2.56s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="WAIorAMsNYCQgbQO5P6rEr"><span class="chip ok" data-page-node-id="rxKZbTMPQKj3N7byXnc4na">分类正确</span><span class="chip ok" data-page-node-id="r9Tp3RfAcanCHHm0MTfLvZ">应用显示 5 条思路</span><span class="chip ok" data-page-node-id="3xNIbkhZ0kDfMTFusEshm3">未强塞数据库</span></div>
+      <div class="overview" data-page-node-id="Q7UQT6snM1I3mAo2vjSFRn"><span data-page-node-id="GysOszOWlNX37BpSXrwA27">一句总览</span>这是超长列表的虚拟滚动问题，核心是不要按条数渲染，只渲染视口内可见的节点。</div><ol class="bullets" data-page-node-id="BYzIDM9T3DAmZ4Nt6FA0pQ"><li data-page-node-id="kRUNj7LNb4CXJDvY3DTaPs">只维护可视区域加少量上下缓冲的节点，滚动时用哈希前缀和二分索引定位起始行，动态高度不强求公式估算。</li><li data-page-node-id="eSCh07A94lfLbgs6NBOy8g">每行渲染后回写真实高度，缓存到行索引数组，同时修正滚动总高度，避免滚动条跳动。</li><li data-page-node-id="wBi1vizpfIGcs147YPRHAO">用 ResizeObserver 或 IntersectionObserver 观察行尺寸变化，重新计算前缀和并保持滚动位置稳定。</li><li data-page-node-id="HbCH6DAAixpLiE01A3O57L">锚点校正：滚动时记录可视区第一行的偏移，高度变化后按该锚点还原位置，防止内容抖动。</li><li data-page-node-id="Uxew34YDk9amjGJjlOSJOU">整屏渲染交给 React.memo 或 vue virtual list 组件，DOM 节点数控制在几十个，滚动事件用 requestAnimationFrame 节流。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="基础设施" data-page-node-id="p7sHF06KYCM7Pg45xU8ksL">
+      <header data-page-node-id="dAWQ7G2L1TLnttumdbRBBk">
+        <div data-page-node-id="FlMju2TJBwFelr0Vn1KyY4">
+          <div class="eyebrow" data-page-node-id="gqrAIFWnFfM79Bv6ZdcAIV">#58 · 第 1 次 · 基础设施 · design_id_generator</div>
+          <h2 data-page-node-id="KJE3v6j9DbLo9FxMbClpFS">设计一个分布式唯一 ID 生成器，要求趋势递增、高可用，而且不能依赖单机自增数据库</h2>
+        </div>
+        <div class="meta" data-page-node-id="MBWY9tbe48Anl8lIFuFWqJ"><b data-page-node-id="3QA1RCbetrcWuOibspe0p9">design</b><span data-page-node-id="GFbK9lVQuv5edZmTpqak14">3.37s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="7yzyOE5qxKdIH0UD8ikqkg"><span class="chip ok" data-page-node-id="D3BJT802uG1ncub1regNr7">分类正确</span><span class="chip ok" data-page-node-id="eJiiOXCwWSn3FW5tP10ulQ">应用显示 5 条思路</span></div>
+      <div class="overview" data-page-node-id="t8XlG8sYrBAIcm7fDScl7R"><span data-page-node-id="geDRksgdO0uXFeQi5ualw8">一句总览</span>这是分布式 ID 生成器，本质是把全局唯一性拆成&quot;机器标识 + 本地单调序列&quot;，趋势递增靠时间位在最前面保证。</div><ol class="bullets" data-page-node-id="lnETGyoABx7ah9N8iFreLu"><li data-page-node-id="QlSkXvOyiNBc8MYvMki5ko">推荐 Snowflake 式的 64 位结构：1 位符号、41 位毫秒时间戳、10 位机器 ID、12 位序列号，单机每毫秒可出 4096 个 ID，时间戳在高位天然趋势递增。</li><li data-page-node-id="b1YYCAo2sWiMneQwgIsRb8">机器 ID 的分配是唯一需要协调的地方，用 ZooKeeper 或 etcd 的临时顺序节点在启动时抢占并持有租约，避免两台机器拿到同一个 workerId。</li><li data-page-node-id="vBxaS2xvasdnLFhrrXyC2P">时钟回拨是最关键的故障边界：回拨幅度小就自旋等待追平，幅度大就拒绝发号并告警，绝不能直接复用旧时间戳，否则会撞号。</li><li data-page-node-id="cXPTfScXSkpEzbMOcrkoXi">高可用靠本地内存发号不加锁，不落盘，实例无状态可随意扩缩，单点故障只影响 1/N 的吞吐；如果完全不接受时钟依赖，可以退化到号段模式，用数据库批量领取 step 段，代价是 ID 不再严格递增。</li><li data-page-node-id="QE1F7FLVvQaLIVFX9fU5Pr">机器 ID 回收要等租约过期，超过 1024 个实例时把 workerId 拆成机房位加实例位，或改用业务前缀隔离。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="基础设施" data-page-node-id="uTMHrTzH3WuAFoz6miv2e1">
+      <header data-page-node-id="sszwqlmATZMARaR8FVAj2j">
+        <div data-page-node-id="KBFhXDjDBgNrzW1eNwB0Wb">
+          <div class="eyebrow" data-page-node-id="GCOzMlEgA0LoVY9ttHucYw">#59 · 第 2 次 · 基础设施 · design_id_generator</div>
+          <h2 data-page-node-id="c5nI9PnRuy6WTm2BjbevSy">设计一个分布式唯一 ID 生成器，要求趋势递增、高可用，而且不能依赖单机自增数据库</h2>
+        </div>
+        <div class="meta" data-page-node-id="2YAY8XIifUr7S4CIC1tS0B"><b data-page-node-id="JrUY5Rj5AGlnZCVnOfPNFz">design</b><span data-page-node-id="eOxdc1GGLoExQlQSulDk2h">3.30s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="3RmnFV7HFHlAtqEZL4OViI"><span class="chip ok" data-page-node-id="JaCsDsa44y3ZtF3oPEvosy">分类正确</span><span class="chip ok" data-page-node-id="mJv4gQ3z3UHupZvUeE76l2">应用显示 5 条思路</span></div>
+      <div class="overview" data-page-node-id="FpkoJfbutl4aHS4z4EPqLt"><span data-page-node-id="vzAwkBiUoF707q1iPBU2Pl">一句总览</span>这是经典的分布式 ID 生成问题，核心是拿号段或时间戳换吞吐，用预分配和故障切换换高可用，同时把趋势递增作为排序友好性而非严格连续。</div><ol class="bullets" data-page-node-id="Hcp97HF5mx28B9gsLFHDsF"><li data-page-node-id="WH7I4Xym2K5F7Y77tilZrY">整体采用 worker 本地生成 + 中心只发号段：每个实例持有一个号段（step 通常 1000），用完再向中心申请下一段，中心不可用时本地还有缓冲，避免每次生成都打远端。</li><li data-page-node-id="rLBxqHF11FwjJIam6EOQSd">ID 结构建议 64 位：符号位保留 0，41 位毫秒时间戳保证趋势递增，10 位 workerId 标识实例，12 位序列号用于同毫秒并发，组合出全局唯一且整体递增。</li><li data-page-node-id="BNCslMTOKwWuaCUaaFkfBs">workerId 必须持久化且不重复：启动时写入数据库或 ZooKeeper 抢占一个唯一 slot，进程重启要复用原 ID，否则同一毫秒序列会撞。</li><li data-page-node-id="pWAx50MucvreMpLluYTbJ0">中心用数据库记录每个 worker 的最大分配值（max_id 行 + 乐观锁或带原子更新的 SQL），号段在内存中双 buffer 预取，主库故障时读备用或直接走本地缓存，保证高可用。</li><li data-page-node-id="m5e8PCIhm2LvZUIxc9HEUp">时钟回拨要兜底：记录上一次时间戳，回拨小于阈值等待追平，超过阈值则拒绝发号或报警，绝不回退时间戳，否则会重复。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="design" data-domain="基础设施" data-page-node-id="KeHOKkwxNe0wmmpmSO4GH1">
+      <header data-page-node-id="XZQZ9wTdMYYIRpwn7Lly4G">
+        <div data-page-node-id="mYeJL57FTE2GSiDjSVmoHt">
+          <div class="eyebrow" data-page-node-id="APHGFqrcbV8mPqNt4j8dcf">#60 · 第 3 次 · 基础设施 · design_id_generator</div>
+          <h2 data-page-node-id="RK6XJNSQgFmkMlkDaFOyyQ">设计一个分布式唯一 ID 生成器，要求趋势递增、高可用，而且不能依赖单机自增数据库</h2>
+        </div>
+        <div class="meta" data-page-node-id="zlvIUbtpAZPxiDJIEsxzA2"><b data-page-node-id="3bXQcfQ7vQ1PhxikyZn8h6">design</b><span data-page-node-id="MF9x4PlqSt1tvKYbFbjkyE">2.92s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="PgxElAXuxsFnvHgMCuDoHp"><span class="chip ok" data-page-node-id="xasNQVjl9GghG8hG3aJMuo">分类正确</span><span class="chip ok" data-page-node-id="G8LtDOxpplAN9ZFepcvuHI">应用显示 5 条思路</span></div>
+      <div class="overview" data-page-node-id="oyzTaZwUla6GTyuYEO2HoU"><span data-page-node-id="BFk7PjyR1Bvks3WMbfDDuq">一句总览</span>这是 Snowflake 这类号段式 ID 生成问题，核心是把 ID 拆成时间戳、机器位和序列号，保证趋势递增又不需要单机数据库。</div><ol class="bullets" data-page-node-id="t8UAdJ152fVNNMGleJdr6D"><li data-page-node-id="nPS16qWHNqFwtzgFfTatRT">ID 结构用 41 位毫秒时间戳加 10 位机器 ID 加 12 位序列号，单机每毫秒可出 4096 个，整体趋势递增。</li><li data-page-node-id="y8mfRYiWdHU5ppVjQoKkWG">机器位不能手配，用注册中心或 etcd 分配 workerId，机器上线时租约占位、下线后过期回收，避免重复。</li><li data-page-node-id="FAIbT6cwgxlSVyE82KsAaH">时钟回拨是主要故障点，回拨小于 5 毫秒就等到追平，回拨过大直接拒绝发号并告警，不能回退时间戳。</li><li data-page-node-id="aMSB2HEDHefuOOtB4TlA1f">高可用靠无状态多实例，每个实例自己算 ID，某个节点挂了其他节点照常发号，不需要中心协调。</li><li data-page-node-id="BU3ykzr1XrP1PLRyxEy0NC">如果要求严格递增而非趋势递增，就退化成单点，只能靠号段模式加持久化缓存兜底。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="coding" data-domain="算法" data-page-node-id="OFAMXbyMyEmKZnjUHqO0w8">
+      <header data-page-node-id="M6vFbUhoWcikk3l2oFXTAF">
+        <div data-page-node-id="9UllzXCcV2X8XSJwDC1AxX">
+          <div class="eyebrow" data-page-node-id="eSSlrojil6sCuXIHhitsr2">#61 · 第 1 次 · 算法 · coding_quicksort</div>
+          <h2 data-page-node-id="KKPvxKQJqgJFLB8D0d1DVV">来手写一个快速排序吧，用 Java</h2>
+        </div>
+        <div class="meta" data-page-node-id="bVcDTQUXOS6Hhz5opxepwk"><b data-page-node-id="LDT1gfDNT0Vhu86Pr29Z3a">coding</b><span data-page-node-id="3jD9Lyd6J22IqzHgKxhqhJ">2.09s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="E3GyW5Xi78TdJIQiHfJLmr"><span class="chip ok" data-page-node-id="uLpgqdYMFBjL6poL1hnRX0">分类正确</span></div>
+      <div class="overview" data-page-node-id="tuhYqYAfwccJFAfKFm9lOr"><span data-page-node-id="DmegFaDeDkjcIBTvthqcVe">一句总览</span>分治，选基准把数组分成两半再递归，平均 O(n log n)，空间 O(log n)。
+```java
+public void quickSort(int[] nums, int left, int right) {
+    if (left &gt;= right) {
+        return;
+    }
+    int pivot = nums[left];
+    int i = left;
+    int j = right;
+    while (i &lt; j) {
+        // 先从右往左找第一个小于基准的数
+        while (i &lt; j &amp;&amp; nums[j] &gt;= pivot) {
+            j--;
+        }
+        nums[i] = nums[j];
+        // 再从左往右找第一个大于基准的数
+        while (i &lt; j &amp;&amp; nums[i] &lt;= pivot) {
+            i++;
+        }
+        nums[j] = nums[i];
+    }
+    // 基准归位，此时 i 左侧都小于等于它，右侧都大于等于它
+    nums[i] = pivot;
+    quickSort(nums, left, i - 1);
+    quickSort(nums, i + 1, right);
+}
+```</div>
+    </article>
+    
+    <article class="case" data-kind="coding" data-domain="算法" data-page-node-id="XpuAhENynlCn4dFQhSGN5j">
+      <header data-page-node-id="Liostnd1NMBZDXGBFQBMp5">
+        <div data-page-node-id="0fGoYEHSAQiE6AFeotBC8E">
+          <div class="eyebrow" data-page-node-id="D1vnFXfspMfDBAJzVYuEIn">#62 · 第 2 次 · 算法 · coding_quicksort</div>
+          <h2 data-page-node-id="t1zTv3SEgcwC6uxkyOiYZQ">来手写一个快速排序吧，用 Java</h2>
+        </div>
+        <div class="meta" data-page-node-id="2bdflS7HL0uDi3yfIxCKDB"><b data-page-node-id="QWsL35CfJPPxCARK29MenC">coding</b><span data-page-node-id="AjJUN45IvL4lFtiXoKCMQg">2.20s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="dPcL438EL3V7cywuH6YQWS"><span class="chip ok" data-page-node-id="UajdTWsJClxPLVBI0FcGpB">分类正确</span></div>
+      <div class="overview" data-page-node-id="Th7UPeCAx5vxWOsSLrpzZH"><span data-page-node-id="uv9FkEoGwPGX3TrxnGKVQC">一句总览</span>分治，选基准把数组分成两半再递归，平均 O(n log n)，最坏 O(n²)，空间 O(log n)。
+```java
+public void quickSort(int[] nums, int left, int right) {
+    if (left &gt;= right) {
+        return;
+    }
+    int pivot = nums[left];
+    int i = left;
+    int j = right;
+    while (i &lt; j) {
+        // 先从右往左找第一个小于基准的数
+        while (i &lt; j &amp;&amp; nums[j] &gt;= pivot) {
+            j--;
+        }
+        nums[i] = nums[j];
+        // 再从左往右找第一个大于基准的数
+        while (i &lt; j &amp;&amp; nums[i] &lt;= pivot) {
+            i++;
+        }
+        nums[j] = nums[i];
+    }
+    // 基准归位
+    nums[i] = pivot;
+    quickSort(nums, left, i - 1);
+    quickSort(nums, i + 1, right);
+}
+```</div>
+    </article>
+    
+    <article class="case" data-kind="coding" data-domain="算法" data-page-node-id="YMBdE97cwiG5SuElUBzJJS">
+      <header data-page-node-id="LcxfbqaSwBBPb0C0xeCNkZ">
+        <div data-page-node-id="ZnOfXoCKwGwG3qtDkS4xdn">
+          <div class="eyebrow" data-page-node-id="DJN6TtCnP9vJTE1lOqayJ0">#63 · 第 3 次 · 算法 · coding_quicksort</div>
+          <h2 data-page-node-id="MxC4ztyamhay6O0tUBDFRc">来手写一个快速排序吧，用 Java</h2>
+        </div>
+        <div class="meta" data-page-node-id="1QaWOvAkVQ0GlKzDpEGwCZ"><b data-page-node-id="671FOxbZ3itGTWBqTgWxH2">coding</b><span data-page-node-id="Wg1IEevxly1Bi79RHXmXf9">2.92s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="5vYk5SRUt3E5HetRwTmEvQ"><span class="chip ok" data-page-node-id="EqsdxNaX4D8Yt0awiPxtwP">分类正确</span></div>
+      <div class="overview" data-page-node-id="5PyzzcmExbfCa0UAZRas4c"><span data-page-node-id="CNGzbouQoNf1eFPuH6ljPB">一句总览</span>分治思想：选一个基准值把数组划分成左右两部分再递归，平均时间复杂度 O(n log n)，递归栈空间 O(log n)。
+```java
+public void quickSort(int[] nums, int left, int right) {
+    if (left &gt;= right) {
+        return;
+    }
+    int pivot = nums[left];
+    int i = left;
+    int j = right;
+    while (i &lt; j) {
+        // 先从右往左找第一个小于基准的数
+        while (i &lt; j &amp;&amp; nums[j] &gt;= pivot) {
+            j--;
+        }
+        nums[i] = nums[j];
+        // 再从左往右找第一个大于基准的数
+        while (i &lt; j &amp;&amp; nums[i] &lt;= pivot) {
+            i++;
+        }
+        nums[j] = nums[i];
+    }
+    // 基准归位，i 就是最终位置
+    nums[i] = pivot;
+    quickSort(nums, left, i - 1);
+    quickSort(nums, i + 1, right);
+}
+```</div>
+    </article>
+    
+    <article class="case" data-kind="coding" data-domain="算法" data-page-node-id="JjC7Wx1x7TBN0Rx9EI04wl">
+      <header data-page-node-id="epkDP6uBes9K3VG6UWN1bJ">
+        <div data-page-node-id="DZB9Vwpdv6DXpU1H7IDZgL">
+          <div class="eyebrow" data-page-node-id="r06VyYLcEfqv6qCpYH5cuj">#64 · 第 1 次 · 算法 · coding_lru</div>
+          <h2 data-page-node-id="FLztSyzAR9w4grfnZo3nxT">实现一个 LRU 缓存，说一下思路然后写出来</h2>
+        </div>
+        <div class="meta" data-page-node-id="CcYdD2RpxLso8yxscGU4qT"><b data-page-node-id="lyEldCZ08taUhuErksxMUc">coding</b><span data-page-node-id="T7HApMZgQ6QSxVAHtcgkOj">3.02s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="K4MZJsGb0Tz8lcltYZFu24"><span class="chip ok" data-page-node-id="NWeRPKuWXRlxNi3qcFiJL1">分类正确</span></div>
+      <div class="overview" data-page-node-id="tiBCS7FuLTJh2k2kD5s8l8"><span data-page-node-id="H2GVGNWbgADARAAR69Rr7b">一句总览</span>用哈希表加双向链表：哈希表 O(1) 定位节点，双向链表维护访问顺序，头部最新、尾部最旧，get 和 put 都是 O(1)，空间 O(capacity)。
+```java
+import java.util.HashMap;
+import java.util.Map;
+
+public class LRUCache {
+
+    // 双向链表节点，同时存 key 才能在淘汰时从 map 中删除
+    class Node {
+        int key;
+        int value;
+        Node prev;
+        Node next;
+
+        Node(int key, int value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+
+    private final int capacity;
+    private final Map&lt;Integer, Node&gt; map;
+    // 虚拟头尾节点，省掉边界判断
+    private final Node head;
+    private final Node tail;
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        this.map = new HashMap&lt;&gt;();
+        this.head = new Node(0, 0);
+        this.tail = new Node(0, 0);
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    public int get(int key) {
+        Node node = map.get(key);
+        if (node == null) {
+            return -1;
+        }
+        // 访问过就移到头部表示最近使用
+        moveToHead(node);
+        return node.value;
+    }
+
+    public void put(int key, int value) {
+        Node node = map.get(key);
+        if (node != null) {
+            node.value = value;
+            moveToHead(node);
+            return;
+        }
+        // 容量满了先淘汰尾部最久未使用的节点
+        if (map.size() == capacity) {
+            Node removed = tail.prev;
+            removeNode(removed);
+            map.remove(removed.key);
+        }
+        Node newNode = new Node(key, value);
+        map.put(key, newNode);
+        addToHead(newNode);
+    }
+
+    private void moveToHead(Node node) {
+        removeNode(node);
+        addToHead(node);
+    }
+
+    private void removeNode(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void addToHead(Node node) {
+        node.next = head.next;
+        node.prev = head;
+        head.next.prev = node;
+        head.next = node;
+    }
+}
+```</div>
+    </article>
+    
+    <article class="case" data-kind="coding" data-domain="算法" data-page-node-id="GzSVpgZQzET6aVDqq2SPDc">
+      <header data-page-node-id="jUlBqJG8EJcg0E2Ckt6QVA">
+        <div data-page-node-id="WALzXbq26x6gBMgyjEtvxO">
+          <div class="eyebrow" data-page-node-id="n9DzCUgGvkiAF5j3LhdPDd">#65 · 第 2 次 · 算法 · coding_lru</div>
+          <h2 data-page-node-id="HLRm6BCwUHFDZkRcSZmgQn">实现一个 LRU 缓存，说一下思路然后写出来</h2>
+        </div>
+        <div class="meta" data-page-node-id="NUfPCXOW08yCSLWliisTLo"><b data-page-node-id="0yAgE5DLWLjouGIqjshI4p">coding</b><span data-page-node-id="YnhV9I5pxzTlbE2YdPqCzU">2.95s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="ZJnd4MTEVskStnjowPco9k"><span class="chip ok" data-page-node-id="2q2CA94BR4w2Bu3XfG0jeN">分类正确</span></div>
+      <div class="overview" data-page-node-id="Hck7EaEBLooRR6c2TUrHOC"><span data-page-node-id="7owAU7OH6ubuOFpaVGFKvC">一句总览</span>哈希表 + 双向链表：哈希表 O(1) 定位节点，双向链表维护访问顺序，头部是最近使用、尾部是最久未用；get 和 put 都是 O(1)，空间 O(capacity)。
+```java
+class LRUCache {
+    class Node {
+        int key;
+        int value;
+        Node prev;
+        Node next;
+
+        Node(int key, int value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+
+    private final int capacity;
+    private final Map&lt;Integer, Node&gt; map;
+    // 虚拟头尾节点，省去空链表判断
+    private final Node head;
+    private final Node tail;
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        this.map = new HashMap&lt;&gt;();
+        this.head = new Node(0, 0);
+        this.tail = new Node(0, 0);
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    public int get(int key) {
+        Node node = map.get(key);
+        if (node == null) {
+            return -1;
+        }
+        moveToHead(node);
+        return node.value;
+    }
+
+    public void put(int key, int value) {
+        Node node = map.get(key);
+        if (node != null) {
+            node.value = value;
+            moveToHead(node);
+            return;
+        }
+        Node newNode = new Node(key, value);
+        map.put(key, newNode);
+        addToHead(newNode);
+        if (map.size() &gt; capacity) {
+            // 淘汰尾部节点，同时从 map 里删掉
+            Node removed = tail.prev;
+            removeNode(removed);
+            map.remove(removed.key);
+        }
+    }
+
+    private void addToHead(Node node) {
+        node.prev = head;
+        node.next = head.next;
+        head.next.prev = node;
+        head.next = node;
+    }
+
+    private void removeNode(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void moveToHead(Node node) {
+        removeNode(node);
+        addToHead(node);
+    }
+}
+```</div>
+    </article>
+    
+    <article class="case" data-kind="coding" data-domain="算法" data-page-node-id="q5mCgp9tFQXAL8FeJU7hv8">
+      <header data-page-node-id="21u9fUH5r2O4LiBPDK26CV">
+        <div data-page-node-id="9FlWe8mvlAsPXae32gOg3r">
+          <div class="eyebrow" data-page-node-id="nEkf5tBFcpmTHCX9cNDvx8">#66 · 第 3 次 · 算法 · coding_lru</div>
+          <h2 data-page-node-id="qITZ8rSetO62Pi7EEElaJ6">实现一个 LRU 缓存，说一下思路然后写出来</h2>
+        </div>
+        <div class="meta" data-page-node-id="xUis3UfmKDgA9OGFyHItx0"><b data-page-node-id="SyaD0Is0cGvsjTk3OafXNo">coding</b><span data-page-node-id="sk0BQZENJGS6Bf5AybHsYY">3.12s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="EIE0iuoDEPW0iBvhsDrphF"><span class="chip ok" data-page-node-id="HLAssOZCgCYKnkvBT2aowp">分类正确</span></div>
+      <div class="overview" data-page-node-id="8M26NseHadfPWqSEoWPD4M"><span data-page-node-id="MvA6P2GXLO5eAGoT9JdEDw">一句总览</span>哈希表加双向链表：哈希表存 key 到节点的映射，双向链表维护访问顺序，最近使用的放头部，淘汰时从尾部删。get 和 put 都是 O(1)，空间 O(capacity)。
+```java
+import java.util.HashMap;
+import java.util.Map;
+
+public class LRUCache {
+
+    // 双向链表节点
+    private static class Node {
+        int key;
+        int value;
+        Node prev;
+        Node next;
+
+        Node(int key, int value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+
+    private final int capacity;
+    private final Map&lt;Integer, Node&gt; map;
+    private final Node head; // 虚拟头，head.next 是最近使用的
+    private final Node tail; // 虚拟尾，tail.prev 是最久未使用的
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        this.map = new HashMap&lt;&gt;();
+        this.head = new Node(0, 0);
+        this.tail = new Node(0, 0);
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    public int get(int key) {
+        Node node = map.get(key);
+        if (node == null) {
+            return -1;
+        }
+        // 访问过就要挪到头部
+        moveToHead(node);
+        return node.value;
+    }
+
+    public void put(int key, int value) {
+        Node node = map.get(key);
+        if (node != null) {
+            node.value = value;
+            moveToHead(node);
+            return;
+        }
+        Node newNode = new Node(key, value);
+        map.put(key, newNode);
+        addToHead(newNode);
+        // 超出容量就淘汰尾部节点
+        if (map.size() &gt; capacity) {
+            Node last = tail.prev;
+            removeNode(last);
+            map.remove(last.key);
+        }
+    }
+
+    private void addToHead(Node node) {
+        node.next = head.next;
+        node.prev = head;
+        head.next.prev = node;
+        head.next = node;
+    }
+
+    private void removeNode(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void moveToHead(Node node) {
+        removeNode(node);
+        addToHead(node);
+    }
+}
+```</div>
+    </article>
+    
+    <article class="case" data-kind="coding" data-domain="算法" data-page-node-id="qu7L3kBgLowF9ZgW1ClIqq">
+      <header data-page-node-id="VvymjbBqb2xw7udKEGDnDy">
+        <div data-page-node-id="fmMnu88KeRYK1vaDyMYv6q">
+          <div class="eyebrow" data-page-node-id="xCf44sAyimOih9aABHYoPD">#67 · 第 1 次 · 算法 · coding_design_lru</div>
+          <h2 data-page-node-id="XevHIrQM2SsHsRd9H3tGLv">设计一个 LRU 缓存，并用 Java 完整实现 get 和 put</h2>
+        </div>
+        <div class="meta" data-page-node-id="pDloByWowAQBCk2hLwJYQR"><b data-page-node-id="foyybIQy4pWvEO6em9Tij6">coding</b><span data-page-node-id="AFVdXTIXxaGB0CHGHc7yxf">2.88s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="m5E0wQUmiknY1GevCbuD33"><span class="chip ok" data-page-node-id="csz7cPidaswFPT4NSqcAkU">分类正确</span></div>
+      <div class="overview" data-page-node-id="bqJLIXsLs3kczAKW2aiC7L"><span data-page-node-id="OWONQjAgVTeZoMNJv4GKtd">一句总览</span>用 HashMap 加双向链表实现，哈希表 O(1) 定位节点，链表头放最近访问、尾放最久未用，get 和 put 都是 O(1)，空间 O(capacity)。
+```java
+import java.util.HashMap;
+import java.util.Map;
+
+public class LRUCache {
+
+    // 双向链表节点
+    class Node {
+        int key;
+        int value;
+        Node prev;
+        Node next;
+
+        Node(int key, int value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+
+    private final int capacity;
+    private final Map&lt;Integer, Node&gt; map;
+    // 虚拟头尾节点，省去边界判空
+    private final Node head;
+    private final Node tail;
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        this.map = new HashMap&lt;&gt;();
+        this.head = new Node(0, 0);
+        this.tail = new Node(0, 0);
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    public int get(int key) {
+        Node node = map.get(key);
+        if (node == null) {
+            return -1;
+        }
+        // 访问过就移到头部
+        moveToHead(node);
+        return node.value;
+    }
+
+    public void put(int key, int value) {
+        Node node = map.get(key);
+        if (node != null) {
+            node.value = value;
+            moveToHead(node);
+            return;
+        }
+        // 容量满了先淘汰尾部最久未使用的节点
+        if (map.size() == capacity) {
+            Node lru = tail.prev;
+            removeNode(lru);
+            map.remove(lru.key);
+        }
+        Node newNode = new Node(key, value);
+        map.put(key, newNode);
+        addToHead(newNode);
+    }
+
+    // 把节点从当前位置摘下来，插到头部
+    private void moveToHead(Node node) {
+        removeNode(node);
+        addToHead(node);
+    }
+
+    private void removeNode(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void addToHead(Node node) {
+        node.next = head.next;
+        node.prev = head;
+        head.next.prev = node;
+        head.next = node;
+    }
+}
+```</div>
+    </article>
+    
+    <article class="case" data-kind="coding" data-domain="算法" data-page-node-id="Luh6DFXAUUNHXY2MbikuFS">
+      <header data-page-node-id="ObYWU1Wdb5HAXWY3921JYq">
+        <div data-page-node-id="ZQPga1CwI4whfemxVHFyA4">
+          <div class="eyebrow" data-page-node-id="EbfCYe9Mw29HMqC9koBbrL">#68 · 第 2 次 · 算法 · coding_design_lru</div>
+          <h2 data-page-node-id="KKRj727CNcHvacLX9IY0s0">设计一个 LRU 缓存，并用 Java 完整实现 get 和 put</h2>
+        </div>
+        <div class="meta" data-page-node-id="oALiUWFuZJi8iVmlbPetnz"><b data-page-node-id="8OTHSJIxJXATIS7Kd3pw1R">coding</b><span data-page-node-id="1x5fL1FHRTArg6ssJfh97M">3.63s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="4lGD9jmtqeHTnCYdp1JiQP"><span class="chip ok" data-page-node-id="3aY1Bev4qQqJCTQ3343ZQA">分类正确</span></div>
+      <div class="overview" data-page-node-id="ECxGYBQ3EZzG78WRLNfVuI"><span data-page-node-id="CvwoYM3j5LDJh8giT2ruoO">一句总览</span>用哈希表加双向链表：哈希表 O(1) 定位节点，双向链表维护访问顺序，最近使用的放头部，超容量就删尾部，get 和 put 都是 O(1)，空间 O(capacity)。
+```java
+import java.util.HashMap;
+import java.util.Map;
+
+public class LRUCache {
+
+    // 双向链表节点，同时存 key 方便淘汰时从 map 里删掉
+    class Node {
+        int key;
+        int value;
+        Node prev;
+        Node next;
+
+        Node(int key, int value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+
+    private final int capacity;
+    private final Map&lt;Integer, Node&gt; map;
+    private final Node head; // 虚拟头，head.next 是最久未使用
+    private final Node tail; // 虚拟尾，tail.prev 是最近使用
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        this.map = new HashMap&lt;&gt;();
+        this.head = new Node(0, 0);
+        this.tail = new Node(0, 0);
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    public int get(int key) {
+        Node node = map.get(key);
+        if (node == null) {
+            return -1;
+        }
+        // 访问过就移到链表尾部，标记为最近使用
+        moveToTail(node);
+        return node.value;
+    }
+
+    public void put(int key, int value) {
+        Node node = map.get(key);
+        if (node != null) {
+            node.value = value;
+            moveToTail(node);
+            return;
+        }
+        // 容量满了先淘汰最久未使用的节点
+        if (map.size() == capacity) {
+            Node oldest = head.next;
+            remove(oldest);
+            map.remove(oldest.key);
+        }
+        Node newNode = new Node(key, value);
+        map.put(key, newNode);
+        addToTail(newNode);
+    }
+
+    private void moveToTail(Node node) {
+        remove(node);
+        addToTail(node);
+    }
+
+    private void remove(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void addToTail(Node node) {
+        node.prev = tail.prev;
+        node.next = tail;
+        tail.prev.next = node;
+        tail.prev = node;
+    }
+}
+```</div>
+    </article>
+    
+    <article class="case" data-kind="coding" data-domain="算法" data-page-node-id="R0QDZsqsTEe6UvMBfPFyer">
+      <header data-page-node-id="a7zZNWlMogLtnIfOG5jeN8">
+        <div data-page-node-id="fnnVfuiWb3yYCkmBplw3Kl">
+          <div class="eyebrow" data-page-node-id="ZV8IQz7d24UNmRwLxs9rbZ">#69 · 第 3 次 · 算法 · coding_design_lru</div>
+          <h2 data-page-node-id="pbwBrq1EBnglVEsCxZ8Vzo">设计一个 LRU 缓存，并用 Java 完整实现 get 和 put</h2>
+        </div>
+        <div class="meta" data-page-node-id="sbYm5qPyiG2auNYwobMjjK"><b data-page-node-id="rBvHsvmNkhQqyCvWL4tT4k">coding</b><span data-page-node-id="sHQ6PKpwV00Ilzcj57woiN">3.15s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="nEe6A8FYvOOHw1VOHoSTHT"><span class="chip ok" data-page-node-id="gT9UwXvTy2bAaUyOWcXFwN">分类正确</span></div>
+      <div class="overview" data-page-node-id="X4cY8jg9Ww1yZ4CzhBhhid"><span data-page-node-id="jLxF7A7DC3TrgHfEDpeRql">一句总览</span>用哈希表加双向链表，哈希表 O(1) 定位节点，双向链表维护访问顺序，头部是最近使用、尾部是最久未用，get 和 put 都是 O(1)，空间 O(capacity)。
+```java
+class LRUCache {
+    class Node {
+        int key;
+        int value;
+        Node prev;
+        Node next;
+
+        Node(int key, int value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+
+    private final int capacity;
+    private final java.util.Map&lt;Integer, Node&gt; map;
+    // 虚拟头尾节点，省掉边界判断
+    private final Node head;
+    private final Node tail;
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        this.map = new java.util.HashMap&lt;&gt;();
+        this.head = new Node(0, 0);
+        this.tail = new Node(0, 0);
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    public int get(int key) {
+        Node node = map.get(key);
+        if (node == null) {
+            return -1;
+        }
+        // 访问过就移到头部，标记为最近使用
+        moveToHead(node);
+        return node.value;
+    }
+
+    public void put(int key, int value) {
+        Node node = map.get(key);
+        if (node != null) {
+            node.value = value;
+            moveToHead(node);
+            return;
+        }
+        Node newNode = new Node(key, value);
+        map.put(key, newNode);
+        addToHead(newNode);
+        // 超出容量就淘汰尾部节点
+        if (map.size() &gt; capacity) {
+            Node last = tail.prev;
+            removeNode(last);
+            map.remove(last.key);
+        }
+    }
+
+    private void addToHead(Node node) {
+        node.prev = head;
+        node.next = head.next;
+        head.next.prev = node;
+        head.next = node;
+    }
+
+    private void removeNode(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void moveToHead(Node node) {
+        removeNode(node);
+        addToHead(node);
+    }
+}
+```</div>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="数据库" data-page-node-id="xprQVZg2EguExwjHmh4Xvd">
+      <header data-page-node-id="Gyhz6FSp3HKXDHDhN4jpDL">
+        <div data-page-node-id="9DRsY2jEWW6uKF6yvCyeBi">
+          <div class="eyebrow" data-page-node-id="iacyNEvm43WjizPddz17px">#70 · 第 1 次 · 数据库 · concept_index</div>
+          <h2 data-page-node-id="D0cebesyQvOANwjAtRGpHu">说说 MySQL 的聚簇索引和非聚簇索引有什么区别</h2>
+        </div>
+        <div class="meta" data-page-node-id="7jfQkOpuyXIOlOzfeZ6YAz"><b data-page-node-id="ybvrorxP3ilWWbLGm4Fulh">knowledge</b><span data-page-node-id="k0UE25WDMJltXhGIY89puA">2.79s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="apIEaKsuWbLRSFB74mWCwQ"><span class="chip ok" data-page-node-id="NNOcwyY8BoHni1uKZh4K6J">分类正确</span></div>
+      <div class="overview" data-page-node-id="ShI8mywt4FUAf01OOVnPbh"><span data-page-node-id="TPsoYoWuRPgTA4VHn9XzqX">一句总览</span>区别在于数据和索引是不是存在一起：聚簇索引的叶子节点直接就是整行数据，InnoDB 里主键索引就是聚簇索引，所以按主键查一次 B+ 树就拿到行；非聚簇索引的叶子节点存的是索引列加主键值，要拿完整行还得再回聚簇索引查一次，这就是回表。所以非聚簇索引也叫二级索引，代价是多一次 B+ 树查找，能用覆盖索引避免回表就是这个原因。</div><ol class="bullets" data-page-node-id="WQg5CLzUCJ2fc19Ox4RrcA"><li data-page-node-id="BR5ieddW57m9ohtLgOGRyW">一张表只能有一个聚簇索引，InnoDB 没显式主键时会用唯一非空索引，再没有就隐藏一个 6 字节 row_id。</li><li data-page-node-id="AjuztTQmtOXTkFtk45ZZ10">非聚簇索引因为要回表，范围扫描时可能变成大量随机 IO，这也是它比聚簇索引慢的主要原因。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="数据库" data-page-node-id="DSmSOG5PY6GoUXM9KxrPeI">
+      <header data-page-node-id="TV5cTjHk3PTSh2kC05iOZd">
+        <div data-page-node-id="3uHf0JHZCCeAXU8CsU7Oy6">
+          <div class="eyebrow" data-page-node-id="DCwinKhIEbWs5ykEe7BURY">#71 · 第 2 次 · 数据库 · concept_index</div>
+          <h2 data-page-node-id="lycC8H3oXT323efi4xfjKB">说说 MySQL 的聚簇索引和非聚簇索引有什么区别</h2>
+        </div>
+        <div class="meta" data-page-node-id="w5ew1wZoBFctNPBBcFjg9v"><b data-page-node-id="FlWQdTmWf25iFkxmxokGJf">knowledge</b><span data-page-node-id="Hux3KAycmLMB9FamHfdbbv">2.60s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="laqzvBv5SnWAMNgEogB7UC"><span class="chip ok" data-page-node-id="adeEHYvcSSpNxZvoMh25bi">分类正确</span></div>
+      <div class="overview" data-page-node-id="pP8kl3rmbxEfkFRP4hTcH2"><span data-page-node-id="SeulIaa72z25wvZ7BRAKoR">一句总览</span>聚簇索引的叶子节点直接存整行数据，一张表只能有一个，通常是主键，所以按主键查一次 B+ 树就到数据了；非聚簇索引的叶子节点存的是索引列加主键值，查到之后还要拿主键回表再查一次聚簇索引。所以二级索引查询要多一次回表，覆盖索引能省掉这一步；另外聚簇索引因为按主键顺序存，范围查询和排序更友好，但主键最好用自增的，避免页分裂。</div><ol class="bullets" data-page-node-id="Ryu9rGxAwuZ3URqQ70aTJr"><li data-page-node-id="q9ah4rBSzq72XHVoeyRE5H">InnoDB 里表数据本身就是按主键组织的聚簇索引，没主键会用唯一非空列，再没有就隐式生成一个 row_id。</li><li data-page-node-id="mbYjawoLeowREbpieQFFAY">回表是随机 IO，二级索引覆盖不到要查的列时，MySQL 可能直接走全表扫描更便宜。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="数据库" data-page-node-id="QxPbTgVAxnM8iS4UQ2kFY8">
+      <header data-page-node-id="CnbFDFh4FhvH4NlKVM7vYM">
+        <div data-page-node-id="tKAkQHHgT6ZlYPliL68yOy">
+          <div class="eyebrow" data-page-node-id="kJmmTqThxLaoXCpN0wtOAm">#72 · 第 3 次 · 数据库 · concept_index</div>
+          <h2 data-page-node-id="DhwmT7CPTmSto1w9xuEG9y">说说 MySQL 的聚簇索引和非聚簇索引有什么区别</h2>
+        </div>
+        <div class="meta" data-page-node-id="8g0Oo7oWKuAuh8h8t1cKat"><b data-page-node-id="NGfCCMqlMGVrBsbnHbagJC">knowledge</b><span data-page-node-id="zgJUF9Ao9HEqGQIZviHMb5">2.16s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="hAAbF0wBdfTeEV0KUoo80d"><span class="chip ok" data-page-node-id="7OMxPBIOPDOZcZJpWpxyDw">分类正确</span></div>
+      <div class="overview" data-page-node-id="ASChwwTNySGF740YsGuNVm"><span data-page-node-id="PJrFbZpwhCeSFPCEfSY4RK">一句总览</span>区别在数据行存在哪：InnoDB 的聚簇索引就是主键索引，叶子节点直接存整行数据，所以一张表只能有一个；非聚簇索引是二级索引，叶子节点存的是索引列加主键值，查到之后要拿主键回表再查一次聚簇索引。所以二级索引查询通常要走两遍 B+ 树，覆盖索引能命中就不用回表。</div><ol class="bullets" data-page-node-id="F92Hu1JxtmJJeLkOQG7OG7"><li data-page-node-id="cue1m3S721mKQFvn4BakNa">主键要短，因为每个二级索引的叶子都存一份主键值，主键长了所有二级索引一起变大。</li><li data-page-node-id="OW1fRkckEJYhxRgyB72yRH">没有主键时 InnoDB 会选唯一非空列，都没有就隐式建一个 6 字节 row_id 当聚簇索引。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="排障" data-page-node-id="QvVG7P4sat7hBhKfILvX2Z">
+      <header data-page-node-id="byHcbjZIuKl18EnE3PLxfv">
+        <div data-page-node-id="Va2oqopKaguiLaHgRXd4bd">
+          <div class="eyebrow" data-page-node-id="esauhBbeuaboVhVRFHXf5X">#73 · 第 1 次 · 排障 · method_cpu</div>
+          <h2 data-page-node-id="V0Erm7K1KL5FGJUEWj6gZ8">线上 Java 服务 CPU 突然到 100%，你会怎么排查</h2>
+        </div>
+        <div class="meta" data-page-node-id="uiIP5MDVBV5MHCc7cHQD81"><b data-page-node-id="OlJc2vjf9Yr8uAECxdkIas">knowledge</b><span data-page-node-id="HMfgqVpVIwrrNmf7uuA3Y3">2.13s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="pDhaGJ8OdCAuZyk7SyJwLE"><span class="chip ok" data-page-node-id="y4Em78cR2dYPIPYn8ohG5B">分类正确</span></div>
+      <div class="overview" data-page-node-id="WjpmjOER0DvhKpWxcEQi7O"><span data-page-node-id="Isc3draJGQLwXCqvQNYEdB">一句总览</span>我先在服务器上用 top -Hp 找到占用最高的线程号，再把它转成十六进制，用 jstack 打线程栈去比对 nid，直接定位到是哪段代码在烧 CPU。线上的话我会连续打两三次栈，看同一个方法是否反复出现在栈顶，是的话基本就是它了。定位到之后再看是死循环、频繁 GC 还是正则回溯这类具体原因。</div><ol class="bullets" data-page-node-id="lPSXjlGgZxONDLoklObHAe"><li data-page-node-id="S5P3E6DCvwYJAH0EXoilo3">如果是 GC 线程占用高，就配合 jstat -gcutil 看 FGC 频率和老年区，那问题在内存泄漏而不是代码。</li><li data-page-node-id="0CDI1ddJxvIueP0BW4hNzD">怀疑负载高时可以先用 arthas 的 dashboard 和 profiler 在线看热点，不用重启也能拿到火焰图。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="排障" data-page-node-id="TQDChzCbjFGFieoyS2kUya">
+      <header data-page-node-id="BxASQ4RFlWVV39aBwN7AF7">
+        <div data-page-node-id="fBT8gDdYdL5jlOYhGsiDr0">
+          <div class="eyebrow" data-page-node-id="Vgbx5tU6OoD7OPPHCHbUTK">#74 · 第 2 次 · 排障 · method_cpu</div>
+          <h2 data-page-node-id="E5i3mhlFhJcwwhhAICtNxX">线上 Java 服务 CPU 突然到 100%，你会怎么排查</h2>
+        </div>
+        <div class="meta" data-page-node-id="uJ8r0f6yMQfprVgIjEDPRY"><b data-page-node-id="iLBjh7Upy8SyGtrJbV8CF2">knowledge</b><span data-page-node-id="1VCiPzpizO9phxtmitZDqp">2.92s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="wZEtWGv5uRynE0uCF0AVEj"><span class="chip ok" data-page-node-id="qS9oA5YrYwmxbGg9efA0UL">分类正确</span></div>
+      <div class="overview" data-page-node-id="XpJ1iTe2wVupKsQJbGPVFk"><span data-page-node-id="3NgWF6ixocdHMArkXDg6rz">一句总览</span>线上 CPU 打满，我按“先定位线程、再看栈、最后看 GC”三步走：先用 top -Hp 找到 PID 下占 CPU 最高的线程，把线程 ID 转成十六进制，再用 jstack 打出栈去比对 nid，定位到具体哪段代码。如果栈里集中在 GC 线程，那就是内存问题，用 jstat -gcutil 看 FGC 频率和耗时；如果是业务线程在死循环或正则回溯，就取那几帧看方法名。定位后先在流量入口限流或摘掉问题实例止损，再谈修复。</div><ol class="bullets" data-page-node-id="3CjCR1k9EX21THUeyw5DS2"><li data-page-node-id="9nCOGkLYvLIvV8z7rydLBf">真实排查一般两轮：第一轮 top -Hp + jstack 定位线程，第二轮看 GC 日志和堆内存确认是计算密集还是内存压力。</li><li data-page-node-id="IJbgRZcV5iOEsoGWSbjGb2">别急着上 arthas，线上先加 -F 落现场，避免重启把证据丢了。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="排障" data-page-node-id="W0MjaK0QVo6OfbXvRVyqCa">
+      <header data-page-node-id="4F24GukRATHrAaFdzFI7FV">
+        <div data-page-node-id="iuXFIfbkvr1nbj3J7DQPih">
+          <div class="eyebrow" data-page-node-id="eyrIrZi7fxNpbzmJGUkyNz">#75 · 第 3 次 · 排障 · method_cpu</div>
+          <h2 data-page-node-id="FOrjbKb9BG5bAq0cODj7v9">线上 Java 服务 CPU 突然到 100%，你会怎么排查</h2>
+        </div>
+        <div class="meta" data-page-node-id="gtG1lVgP3BbQtZQLfBV40b"><b data-page-node-id="AWDIcSASZHUvGxksujeGaU">knowledge</b><span data-page-node-id="uIRzAqsT7y8t0BmSDG61zT">2.46s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="7zgV1J6vuNAi1VnpdqT7d9"><span class="chip ok" data-page-node-id="8sgF3Ebsx8a3qulEIeBGv4">分类正确</span></div>
+      <div class="overview" data-page-node-id="WFK3JtFVsct6HteqlDyqnp"><span data-page-node-id="x2nuHCbHdxPRRZ3dz0dVVp">一句总览</span>先定位哪个进程哪个线程，线上最快的办法是 top 找到 pid，再用 top -Hp 看是哪几个线程在烧 CPU，然后把线程号转成十六进制，去 jstack 里对哪段代码。常见就那么几类：死循环、正则回溯、频繁 Full GC 占着 GC 线程、或者锁竞争唤醒大量线程，定位到栈之后再看是线程池配置问题还是代码逻辑问题。</div><ol class="bullets" data-page-node-id="BS51e9o7lZ6nrvGoKY9sKV"><li data-page-node-id="nSD3N8cX8B7gPBvU2BmCNN">连接数高的话先加 -H 确认是业务线程还是 GC 线程，GC 线程占满一般配 jstat 看老年代。</li><li data-page-node-id="Fbj0no1XdW27P7G8QUgD5K">如果 jstack 抓不到，用 arthas 的 thread -n 3 直接看最忙的三个栈更省事。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="缓存" data-page-node-id="wa5KMI9Wom60ZpoKT1qRBX">
+      <header data-page-node-id="9IMnn1kicHK9XYLzc0MdHR">
+        <div data-page-node-id="URpiF2PtHbkbFo7fZ2OkKx">
+          <div class="eyebrow" data-page-node-id="a9gkDSAKiAlfoXjXlZ4l6y">#76 · 第 1 次 · 缓存 · method_cache_breakdown</div>
+          <h2 data-page-node-id="ZhPhANMv9mLEKPBEzSXGLu">缓存击穿是什么，常见解决办法有哪些</h2>
+        </div>
+        <div class="meta" data-page-node-id="UV0cSGlYDfOn0HvwGSGCB8"><b data-page-node-id="ohfAQzAusm8Whr8CFIhGR7">knowledge</b><span data-page-node-id="qSoXjxycnMCeKUFhAJsPiG">2.31s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="2vxDtycKIVMtlNKOtbgUih"><span class="chip ok" data-page-node-id="frMAUMfMxPjEVCB9SGqsmT">分类正确</span></div>
+      <div class="overview" data-page-node-id="NDT4MAGYXz0LHwtwuOqNzl"><span data-page-node-id="Ci7Q4N2EcJM7Yhw8SHYft5">一句总览</span>缓存击穿是某个热点 key 过期的瞬间，大量并发请求同时穿透到数据库，把库打挂。常见解法有两种：一是互斥锁，只让一个线程去查库并回填，其他线程等结果；二是热点 key 逻辑过期或不设过期，后台异步刷新，让请求始终读到旧值不落库。</div><ol class="bullets" data-page-node-id="mhumF3RGW3aupbHszj8GnE"><li data-page-node-id="rd55FEKUlzuM5D6EA2imrB">互斥锁实现上要注意锁超时和拿到锁后二次检查缓存，否则会重复回源。</li><li data-page-node-id="RX8r1A47sY9xyQWC9PIgw4">热点 key 提前预热并设置随机过期时间，可以避免同一时刻集体失效。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="缓存" data-page-node-id="rfwDA3ru8mygbZXYc8mSB9">
+      <header data-page-node-id="3xTi6CsScDVrIztECWDGuz">
+        <div data-page-node-id="0eqzZG80q1Ijh3QMp5RoEn">
+          <div class="eyebrow" data-page-node-id="vsDI7e0e6m16d93972APCU">#77 · 第 2 次 · 缓存 · method_cache_breakdown</div>
+          <h2 data-page-node-id="H10SVKNAFudMdvm9GsM4zO">缓存击穿是什么，常见解决办法有哪些</h2>
+        </div>
+        <div class="meta" data-page-node-id="dfXrbX3Eksr0U8ETbBi12X"><b data-page-node-id="kOfsS8ko1IWOZ4xODxputa">knowledge</b><span data-page-node-id="df9qgbcvUcbSmzLNA17QJL">2.72s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="F2i7iaYCU1aLXC07aV2LDN"><span class="chip ok" data-page-node-id="F1TBpkeywDdWtEzXTFSjo7">分类正确</span></div>
+      <div class="overview" data-page-node-id="O0puegQoAPabL7UZHlRFEu"><span data-page-node-id="WvuWzhFvaiC5nXuGi18EvK">一句总览</span>缓存击穿是某个热点 key 过期的瞬间，大量请求同时打到数据库，本质是单 key 失效引发的并发穿透。常见解法有三类：一是互斥锁，只让一个线程回源重建，其余线程短暂等待；二是热点 key 逻辑过期，value 里存过期时间但物理不过期，发现逻辑过期就异步重建、先返回旧值；三是提前预热加随机过期时间，避免集中失效。互斥锁最简单但会阻塞请求，逻辑过期不阻塞但要容忍短暂脏数据。</div><ol class="bullets" data-page-node-id="GvLbazBgT95KVlgLz7Blad"><li data-page-node-id="oGs1HHmMOqBMpcL86maxXJ">和缓存雪崩的区别是：雪崩是大批 key 同时失效，击穿是单个热点 key 失效。</li><li data-page-node-id="4zLzLfA8CvfICreONcl30k">如果要求强一致就不能用逻辑过期，只能互斥锁加重试，牺牲可用性。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="缓存" data-page-node-id="SWCjrc2s25WC4htYNGg2u4">
+      <header data-page-node-id="BiJaPM5k8ViLcLoh34FRFa">
+        <div data-page-node-id="d2JLa1UElvCutuFoOKw8iq">
+          <div class="eyebrow" data-page-node-id="xNFhE6kjcDwrFVCIirF7hP">#78 · 第 3 次 · 缓存 · method_cache_breakdown</div>
+          <h2 data-page-node-id="DdbcplCTd7sRDfSqCiHlhn">缓存击穿是什么，常见解决办法有哪些</h2>
+        </div>
+        <div class="meta" data-page-node-id="CT983nDHC92j7U4hVRP5uU"><b data-page-node-id="erMJBKpSP5kAQ7q7xgV5SZ">knowledge</b><span data-page-node-id="9fmrkCh5tbOeHszEKOblIY">2.06s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="klTIxOu0ErX0aad6zy7HF3"><span class="chip ok" data-page-node-id="tE97nUvnULWn05Ik7Au26x">分类正确</span></div>
+      <div class="overview" data-page-node-id="Lf5SbvBanjPrAU7f0tDgZu"><span data-page-node-id="eIgkUcfl9IMrawXV9feW65">一句总览</span>缓存击穿是某个热点 key 过期的瞬间，大量并发请求直接打到数据库上。常见解决办法是加互斥锁，让一个线程回源重建缓存、其他线程等待重试，或者对热点 key 逻辑过期不删除、异步更新。核心是保证同一时刻只有一个请求去查库。</div><ol class="bullets" data-page-node-id="yDCL9CW5zUNYKFXcO5jDsP"><li data-page-node-id="r5qXmBNMZ48tSrr9A1VdCr">互斥锁用 setnx 实现，注意设超时并做双重检查，拿到锁后再查一次缓存。</li><li data-page-node-id="PSPWNSOkqf7KAEV2DuYo8p">逻辑过期把过期时间存在 value 里、key 本身不过期，读到逻辑过期就返回旧值并异步刷新。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="排障" data-page-node-id="M5bL1F38yNtr6ElDJpiHRd">
+      <header data-page-node-id="EwbCoHOPLHj2GpABvj7oad">
+        <div data-page-node-id="f8PGtwPYEAHQ8QqdcVcDUf">
+          <div class="eyebrow" data-page-node-id="ACGsICn7wQMPhFSwyCl5zy">#79 · 第 1 次 · 排障 · method_slow_api</div>
+          <h2 data-page-node-id="caezzMjuz2TI85hdGPEBQ1">一个接口突然变慢，你一般按什么步骤定位问题</h2>
+        </div>
+        <div class="meta" data-page-node-id="3p5lnmsg68CE0PZCggPRuj"><b data-page-node-id="YvjVlZtcrlDR773JXAvjHx">knowledge</b><span data-page-node-id="9VPKUXgIGXOPLPw7tnc0cP">3.10s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="qOTwwMnTzHGHghUjODEZiM"><span class="chip ok" data-page-node-id="NQTADEShos9BEE7DwCFBLH">分类正确</span></div>
+      <div class="overview" data-page-node-id="JFQX5RYQqcr0lw4jjN85fe"><span data-page-node-id="ZvlgJ4QUKOm0rC6NoFGh0L">一句总览</span>一般按从外到内、先排除再深入的四步走：先看监控确认是全部请求慢还是个别慢、从哪个时间点开始，再查最近有没有发布、配置或数据量变化，然后分链路看是网络、网关、下游依赖还是本服务耗时，最后才进到 JVM 和数据库层面看慢 SQL、GC、线程池。关键是前两步先锁定范围，避免一上来就 dump 线程或翻代码。</div><ol class="bullets" data-page-node-id="iHHxXdaTm81TDeSmnHIJnh"><li data-page-node-id="mwSIQxvKsKmGrNtaxXID4v">如果只有 P99 慢、平均正常，优先怀疑锁竞争、GC 停顿或个别慢依赖，而不是整体容量问题。</li><li data-page-node-id="gTReVKIpgHkoIs9NBpBVnC">进到服务内部时看 APM 的火焰图或埋点分段耗时，比直接 jstack 更快定位到是哪一段代码。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="排障" data-page-node-id="HfuKTRBxm1PfXSxWtEG5P6">
+      <header data-page-node-id="GPIyAmdFXYXAYraDEVgx0r">
+        <div data-page-node-id="wcyeTq6HILGqtyW6qyLvoF">
+          <div class="eyebrow" data-page-node-id="9o4uFoukvRX7oANLR1DDvO">#80 · 第 2 次 · 排障 · method_slow_api</div>
+          <h2 data-page-node-id="gyWeKPaXeriB00R8wIjBP1">一个接口突然变慢，你一般按什么步骤定位问题</h2>
+        </div>
+        <div class="meta" data-page-node-id="Ndf8sl3gJChzgbQogulplA"><b data-page-node-id="vqO13DuBOA24MfXPoivfNB">knowledge</b><span data-page-node-id="rK5zqlGHArW52jOBhVv2MA">2.62s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="QjQB6fJFpkIVZh3wvyPUG3"><span class="chip ok" data-page-node-id="9xsCvaYRnth3EDm0NezRmj">分类正确</span></div>
+      <div class="overview" data-page-node-id="0sRQR0UVHuN3zSRNPYx0TD"><span data-page-node-id="EDAFdFayZ8GzQ3PA01HLC3">一句总览</span>我按从外到内分四步定位：先看监控确认是整体变慢还是个别实例，再用 trace 把耗时拆到具体阶段，然后查这一段的日志和慢查询，最后本地或压测复现验证。经验上先怀疑下游依赖和慢 SQL，因为大部分接口变慢都不是应用代码本身算得慢，而是线程卡在等数据库或者等第三方返回值上。</div><ol class="bullets" data-page-node-id="0ZE7CB0ZtGQhLwwRalaLam"><li data-page-node-id="eH3EGcKcq0i1x5lM5C5V3d">如果只有部分实例慢，先看那一台机器的 CPU、GC、连接池和是否有热点流量打进来。</li><li data-page-node-id="KQluXU6sqsMvkvzoaQDAp5">看是延迟涨还是吞吐降：延迟涨通常是等下游，吞吐降一般是线程池或连接池被打满。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="knowledge" data-domain="排障" data-page-node-id="fDjc7b8OljRtmdIELCatmz">
+      <header data-page-node-id="FXPQs82HQwWbobfA9CzU98">
+        <div data-page-node-id="h4SPyIPl0Gg3CmUFu29PTC">
+          <div class="eyebrow" data-page-node-id="qE0CQ6ZKE1xab98DvS0wpI">#81 · 第 3 次 · 排障 · method_slow_api</div>
+          <h2 data-page-node-id="89lFEoAikIG98Ff9z45Xe0">一个接口突然变慢，你一般按什么步骤定位问题</h2>
+        </div>
+        <div class="meta" data-page-node-id="Adn3sqWtOC7gCij34Z7fgh"><b data-page-node-id="Agexa29h5I5DDi1SFPvRGF">knowledge</b><span data-page-node-id="l3p7zIMJMH9dmawAE5WtTZ">2.33s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="uGPwTzWyNBVHsiBVssWb9c"><span class="chip ok" data-page-node-id="9wYF8cfIGOq65JKoZvJ8OJ">分类正确</span></div>
+      <div class="overview" data-page-node-id="Uepcssfcpo5G0bz8JCAPZp"><span data-page-node-id="wUEaFQ9WBScNwmUzkzcvPY">一句总览</span>我会先按分层排查：确认是全局还是单接口、再看应用层、依赖层、最后到系统和 DB。第一步看监控和日志，确认是这一个接口还是全站慢、是最近变更引起的还是缓慢劣化，先缩小范围。第二步按耗时拆链路，看是入口排队、业务逻辑、还是下游调用和慢 SQL，把时间花在占比最大的那段。第三步再去对应层深挖，应用看线程栈和 GC，DB 看执行计划和锁等待，网络看连接和超时。</div><ol class="bullets" data-page-node-id="NlVQHw2LMwwCh8paG1iQ06"><li data-page-node-id="54RL5h0vD23X5Me4ZLWFv8">先止血再定位：线上优先限流或回滚最近变更，别在故障中现场调试。</li><li data-page-node-id="v6RjbPDya594SDlKnw1WEr">每层都要拿到证据再往下走，避免凭直觉直接怀疑某个组件。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="behavioral" data-domain="行为题" data-page-node-id="Hgxyf5JtL0W9xZhtCCQjkG">
+      <header data-page-node-id="B6BA1SCk5jrTEREQ4RGwVS">
+        <div data-page-node-id="nZcSajkc75iAlX1jwvu3S6">
+          <div class="eyebrow" data-page-node-id="0kSSnHt2yyT1fDXONaWKe5">#82 · 第 1 次 · 行为题 · behavioral_incident</div>
+          <h2 data-page-node-id="KRfu3kwFI0bjebNk8cSAS9">说说你处理过最严重的一次线上事故，以及你是怎么复盘的</h2>
+        </div>
+        <div class="meta" data-page-node-id="cqTsjc8uXsMfrv7QmtooYn"><b data-page-node-id="aUfXjYW39bdrfhqCbqr0L2">behavioral</b><span data-page-node-id="x4DGHlVDANFAefD7Wvjvfi">2.29s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="3iVBFl1hYnbKy6Hn2WJwmC"><span class="chip ok" data-page-node-id="KzDEH2ZL1tT35KOABlH1qG">分类正确</span></div>
+      <div class="overview" data-page-node-id="hLAAApoLZDSIvAES82UGwR"><span data-page-node-id="0BusrtQes2aHMBLY872MwF">一句总览</span>这题只能用你自己的真实经历，我替不了你。挑一次你真的参与过的事故，重点讲你当时做的判断、你负责的那部分，最后给一个能兜住追问的数字。</div><ol class="bullets" data-page-node-id="H9J5TwSKwx6Nurk13l1fqG"><li data-page-node-id="9yp3WIyWdX3HcPMY3dt6ns">复盘要说清三件事：直接原因、为什么没被更早发现、你后来改了什么。</li><li data-page-node-id="wiKQgOTo3i2CQHXhuAjiLO">没赶上过大事故就讲你拦下的严重问题，也别编一个P1。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="behavioral" data-domain="行为题" data-page-node-id="g5CqvTvHWSQ9EEgncn9IHT">
+      <header data-page-node-id="8rwyahLsjagbtFD2wie0P5">
+        <div data-page-node-id="vFZSzzDstYclBblC42xXqi">
+          <div class="eyebrow" data-page-node-id="3oEPKyTVjTKU9Wi3QI9GO8">#83 · 第 2 次 · 行为题 · behavioral_incident</div>
+          <h2 data-page-node-id="o7iAUiUUbW6Bt8Vk41rERT">说说你处理过最严重的一次线上事故，以及你是怎么复盘的</h2>
+        </div>
+        <div class="meta" data-page-node-id="0mNQUnAHWSA8zuxXOqt56k"><b data-page-node-id="xhcNvC2bzcOAVctpSdbTGk">behavioral</b><span data-page-node-id="Bdndv8HdsncGQmapBGE9aX">1.98s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="a8ytVDLHJqK3DCxCo4IsOW"><span class="chip ok" data-page-node-id="mJSKG1ZGVbOfK3XcXy55lw">分类正确</span></div>
+      <div class="overview" data-page-node-id="jXmDQtL2TXtPa7tAwLk7Lc"><span data-page-node-id="bFS302VLePxJTvu9F2DzTF">一句总览</span>这题只能用你自己的真实经历，我替不了你。挑一次你真的扛过的事故，重点讲你当时做的判断和后来改了什么。</div><ol class="bullets" data-page-node-id="LRNJzRNSk4lsqro2Qg0BFr"><li data-page-node-id="QXTQPaSZ3ZjxIgsxvyVZxS">一定要给数字：影响多少用户、持续多久、几点恢复。</li><li data-page-node-id="oBqXlMFxbmgpfvPcGIpGd7">复盘别只说流程，要落到一个你改掉的具体动作，比如加了告警或改了发布顺序。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="behavioral" data-domain="行为题" data-page-node-id="AmLTkogGTSVFyl83h2Ajh0">
+      <header data-page-node-id="3kPcqtTv8GD5M0D1qmDzyL">
+        <div data-page-node-id="Bu2KiRALAH5t7AtLFJdZoR">
+          <div class="eyebrow" data-page-node-id="uUXaTW2TfJ8pJEPOudU0Zp">#84 · 第 3 次 · 行为题 · behavioral_incident</div>
+          <h2 data-page-node-id="Eqb8KBa4s3Acu5yHLSFCIY">说说你处理过最严重的一次线上事故，以及你是怎么复盘的</h2>
+        </div>
+        <div class="meta" data-page-node-id="4Jp4AcVfNOWHxk0yZwi1ry"><b data-page-node-id="XDM4FVHtBkPeiNeK5WeZgU">behavioral</b><span data-page-node-id="ImYdKIHjZKPVOaisPiGggW">2.23s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="2rZFkDUbHlWsrF2B3a5uJn"><span class="chip ok" data-page-node-id="iMnsSuv3kkRfyTwQnLHajG">分类正确</span></div>
+      <div class="overview" data-page-node-id="LaKEGZF9MGkU6LBW7Xr6FA"><span data-page-node-id="3xqMUIqn0L2k8xOFRu85Vh">一句总览</span>这题只能用你自己的真实经历，我替不了你。挑一次你真正值班处理过的事故，重点讲你当时做了什么判断、为什么那么决定，最后给一个能量化的结果。</div><ol class="bullets" data-page-node-id="97dTHhp8lowieAfmpoGhwK"><li data-page-node-id="3SbiXPpzNhsyjBWeTazrph">复盘部分要说清三件事：直接原因、为什么没被更早发现、你落地了什么改动。</li><li data-page-node-id="qOOUYsBiGjvM27P1wP7ftb">影响面、恢复耗时这类数字一定要给具体的，没有数字的故事面试官记不住。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="behavioral" data-domain="行为题" data-page-node-id="FcqnUWtM0GUfYpMaZUjIO7">
+      <header data-page-node-id="FgjPkEiTseD3QZlhkSdDVk">
+        <div data-page-node-id="r3HntNY30dWayHobLDk4pu">
+          <div class="eyebrow" data-page-node-id="bq8QWNXt0BqO9Fq41TjHE2">#85 · 第 1 次 · 行为题 · behavioral_design</div>
+          <h2 data-page-node-id="NwYSeezwuYYy6FDuRlgrEP">讲一个你主导过的系统设计项目，你遇到的最大分歧是什么</h2>
+        </div>
+        <div class="meta" data-page-node-id="J6jSLbmFo2iP6nj2FPBERB"><b data-page-node-id="9O6wX6C2NVijhxxpCZmyO1">behavioral</b><span data-page-node-id="Lp7v54YDBMiPVr5rma8cGt">1.73s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="QKE8Nzfbrv0CgjaqVztxDC"><span class="chip ok" data-page-node-id="H1dDmNcODF9H2IJQ8EUoEz">分类正确</span></div>
+      <div class="overview" data-page-node-id="OeJlkFueXVrmYF2ogusu58"><span data-page-node-id="Yp6Qa4hAaHv6kc55yxSki3">一句总览</span>这题只能用你自己的真实项目，我替不了你。挑一个你真的拍板过的设计，分歧要讲具体：两个人各自坚持什么、你用什么依据做的决定、上线后结果如何。</div><ol class="bullets" data-page-node-id="KjQTx1XMgQOV6slCSjiXlU"><li data-page-node-id="b4SDQWLXoBqLSxdsIz7QzA">分歧别讲成&quot;大家讨论后达成一致&quot;，要说出你最终否掉了谁、为什么。</li><li data-page-node-id="lWy9063QzxjdDYcvRg8KMQ">一定要收在一个可验证的结果上，性能数字、故障率、交付时间都行。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="behavioral" data-domain="行为题" data-page-node-id="XyvSOARdmZ4a0aHyejul1j">
+      <header data-page-node-id="LPBf0bGQL3l138Uzfe6glE">
+        <div data-page-node-id="d6mMVD1FVTM11tquhPjg1E">
+          <div class="eyebrow" data-page-node-id="6nY8VdFyfpUdNX9XSW5k8Y">#86 · 第 2 次 · 行为题 · behavioral_design</div>
+          <h2 data-page-node-id="IPrHkpzayBTFF9bRvob8In">讲一个你主导过的系统设计项目，你遇到的最大分歧是什么</h2>
+        </div>
+        <div class="meta" data-page-node-id="12HIm5e37FZxBF9QLhkrRN"><b data-page-node-id="IUhotDcagcnj4mPLZfzQrC">behavioral</b><span data-page-node-id="JYfOBv3lqxQ7Nwn7qbwJKZ">2.16s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="FZ7ZsnR6FeNg5HVgchPbMt"><span class="chip ok" data-page-node-id="E4ZYY5Z6r41j0WYuMao94R">分类正确</span></div>
+      <div class="overview" data-page-node-id="VvVVZOycfS5saRuSQ04HWQ"><span data-page-node-id="P3sht9BZ2GyIzCRoEMRBpF">一句总览</span>这题只能用你真实做过的项目，我替不了你。挑一个你真正拍过板的系统，重点讲那个分歧：双方各自的方案、你用什么论据说服或妥协、最后结果如何。</div><ol class="bullets" data-page-node-id="iXitlsTfNPXbFrww9PAXpZ"><li data-page-node-id="1MXsWrerveg6ZHcV8O3a0P">分歧要具体，是选型之争还是数据模型之争，别讲成团队气氛问题。</li><li data-page-node-id="LNrPLMlHhlg4sBbSKWIOJz">一定要说清最后是谁的决定、上线后的效果数字，这比过程更被看重。</li></ol>
+    </article>
+    
+    <article class="case" data-kind="behavioral" data-domain="行为题" data-page-node-id="jwGhyTVR4TdP8MDISHgs7i">
+      <header data-page-node-id="Din7lTvbJW6cgj2W28U89Z">
+        <div data-page-node-id="EdkcnCMP2JkKfHnVGglTB6">
+          <div class="eyebrow" data-page-node-id="4smY93UNg22QCLgcCiLQQp">#87 · 第 3 次 · 行为题 · behavioral_design</div>
+          <h2 data-page-node-id="yNrl2AY1peZI2p4msHuVxk">讲一个你主导过的系统设计项目，你遇到的最大分歧是什么</h2>
+        </div>
+        <div class="meta" data-page-node-id="9BWyx6EEsUnkRXcUpcgX3h"><b data-page-node-id="WmyHX10AJTunleJ1hqjrVU">behavioral</b><span data-page-node-id="FLPfEPqCXutPm3HKVx2SsZ">2.23s</span></div>
+      </header>
+      <div class="chips" data-page-node-id="l8qVVoy5RhCVgJfU7UD6Lt"><span class="chip ok" data-page-node-id="1g0Nmn6EiG0Ux4GiHF5LWQ">分类正确</span></div>
+      <div class="overview" data-page-node-id="Zz0t4DnZ0rfHyhMd4FSz6A"><span data-page-node-id="n1t6HTFPcI8EoBZleuFdCC">一句总览</span>这题只能讲你自己的真实经历。挑一个你真正拍过板的设计，重点说分歧双方各自在争什么、你依据什么做的决定、最后结果怎样。</div><ol class="bullets" data-page-node-id="2a0eANW4CQ9pCZ7E6DNSxu"><li data-page-node-id="BLRVRo014LKyCrrWgQjDJq">一定要给一个能被追问的细节，比如容量、QPS 或上线后的数据。</li><li data-page-node-id="9gISX0Q14frh1g7HmafCF3">分歧可以是和数据一致性、成本或进度相关的，但必须说清你最后怎么收口。</li></ol>
+    </article>
+    </section>
+</main>
+<script>
+for (const button of document.querySelectorAll('button[data-filter]')) {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('button').forEach((item) => item.classList.remove('active'));
+    button.classList.add('active');
+    const filter = button.dataset.filter;
+    document.querySelectorAll('.case').forEach((card) => {
+      card.style.display = filter === 'all' || card.dataset.kind === filter ? '' : 'none';
+    });
+  });
+}
+</script>
+</body></html>

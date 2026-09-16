@@ -25,6 +25,7 @@ pub async fn save_provider_config(
     base_url: String,
     model: String,
     api_key: String,
+    vision_model: Option<String>,
     mmproj_path: Option<String>,
 ) -> Result<(), String> {
     if !provider_id.supports(kind) {
@@ -41,6 +42,12 @@ pub async fn save_provider_config(
             provider_id,
             base_url,
             model,
+            // Blank means "same as the text model"; store None so the field
+            // disappears from the file instead of persisting an empty string
+            // that later reads as a real (broken) model name.
+            vision_model: vision_model
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
             mmproj_path,
         },
     )

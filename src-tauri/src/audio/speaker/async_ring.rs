@@ -49,10 +49,15 @@ where
         self.read_idx < self.read_len
     }
 
-    fn drain_dropped_counter(&mut self) {
-        if let Some(dropped_samples) = &self.dropped_samples {
-            let _ = dropped_samples.swap(0, Ordering::Relaxed);
-        }
+    /// Samples lost to ring-buffer overrun since the last call. Consuming it
+    /// here means the count is reported instead of being silently reset — an
+    /// overrun deletes samples from the middle of the stream, which
+    /// time-compresses the audio the ASR sees.
+    pub(crate) fn take_dropped(&mut self) -> usize {
+        self.dropped_samples
+            .as_ref()
+            .map(|counter| counter.swap(0, Ordering::Relaxed))
+            .unwrap_or(0)
     }
 
     fn try_pop_chunk(&mut self) -> Option<usize> {
@@ -69,20 +74,22 @@ where
     }
 
     fn poll_ready_chunk(&mut self, cx: &mut Context<'_>) -> Option<bool> {
-        self.drain_dropped_counter();
-
         if self.try_pop_chunk().is_some() {
             return Some(true);
         }
 
-        self.wake_pending.store(true, Ordering::Release);
+        // Order matters. Registering the waker BEFORE publishing readiness
+        // closes the window where the producer sees `wake_pending`, wakes,
+        // and finds no waker registered — a wake that is lost for good,
+        // because the producer then clears the flag and never retries. The
+        // consumer stays parked while the ring buffer fills and overruns.
         self.waker.register(cx.waker());
+        self.wake_pending.store(true, Ordering::Release);
 
         if self.try_pop_chunk().is_some() {
             return Some(true);
         }
 
-        self.wake_pending.store(true, Ordering::Release);
         None
     }
 
