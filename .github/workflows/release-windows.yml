@@ -22,22 +22,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.11.0
-          run_install: false
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "pnpm"
+
+      # pnpm comes from npm instead of pnpm/action-setup, and setup-node's
+      # `cache: pnpm` is deliberately off: that option probes
+      # `pnpm store path --silent` before anything is installed, and on the
+      # Windows runner it exits 1 with an empty stderr (--silent swallows
+      # pnpm's own error text), aborting the job. Dependency caching is
+      # optional, so the probe is not worth the failure.
+      - name: Install pnpm
+        run: npm i -g pnpm@9.11.0
+
+      - name: Verify toolchain
+        shell: bash
+        run: |
+          node -v
+          npm -v
+          pnpm -v
+          # Not silent: if this ever fails we want the real error text.
+          pnpm store path || echo "[warn] pnpm store path probe failed (non-fatal)"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Pin the store to an absolute, definitely-writable path instead of
+          # letting pnpm resolve it.
+          STORE="${LOCALAPPDATA:-$HOME/AppData/Local}/pnpm-store"
+          echo "store-dir: $STORE"
+          pnpm install --frozen-lockfile --store-dir "$STORE"
 
       - name: Set package version
         shell: bash
