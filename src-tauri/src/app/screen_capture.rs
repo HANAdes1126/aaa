@@ -6,10 +6,11 @@
 //! system prompt embeds an anti-injection contract so text found *inside* the
 //! screenshot is treated as untrusted data, never as instructions.
 //!
-//! The capture path is macOS-only (CoreGraphics). Non-macOS targets return a
-//! clear error rather than silently degrading.
+//! The capture path is implemented per platform: CoreGraphics on macOS and GDI
+//! (via the `xcap` crate) on Windows. Unsupported targets return a clear error
+//! rather than silently degrading.
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -98,35 +99,34 @@ pub struct CaptureResult {
 }
 
 /// Captures the current screen, optimizes it for a vision model, and returns
-/// the base64-encoded JPEG. Permission is checked up front so the user gets an
-/// actionable message instead of a silently wallpaper-only frame (which is what
-/// CoreGraphics returns when Screen Recording is not yet granted).
+/// the base64-encoded JPEG. Permission is checked up front on macOS so the user
+/// gets an actionable message instead of a silently wallpaper-only frame (which
+/// is what CoreGraphics returns when Screen Recording is not yet granted).
 #[tauri::command]
 pub fn capture_screen(app: AppHandle) -> Result<CaptureResult, String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
-        // 硬性前置检查：没有屏幕录制权限就直接报错，绝不静默返回壁纸。
-        // CGDisplayCreateImage 在无权限时不会返回 None，而是返回一张只有壁纸、
-        // 没有窗口内容的图——这就是「截到壁纸」的真正根因，必须在它之前拦截。
-        ensure_screen_capture_permission(&app)?;
-
-        let image = capture_fullscreen_image()?;
-        let width = image.width();
-        let height = image.height();
+        let (width, height, rgba) = capture_frame(&app)?;
         if width == 0 || height == 0 {
-            return Err(
-                "未能截取屏幕：CGDisplayCreateImage 返回空图像。\
-                 请确认「系统设置 → 隐私与安全性 → 录屏与系统录音」已勾选 Meetly，\
-                 然后 **完全退出并重新打开 Meetly**（macOS 的 TCC 缓存在进程退出前不会刷新）。"
-                    .to_string(),
-            );
+            #[cfg(target_os = "macos")]
+            {
+                return Err(
+                    "未能截取屏幕：CGDisplayCreateImage 返回空图像。\
+                     请确认「系统设置 → 隐私与安全性 → 录屏与系统录音」已勾选 Meetly，\
+                     然后 **完全退出并重新打开 Meetly**（macOS 的 TCC 缓存在进程退出前不会刷新）。"
+                        .to_string(),
+                );
+            }
+            #[cfg(target_os = "windows")]
+            {
+                return Err("未能截取屏幕：GDI 返回空图像。".to_string());
+            }
         }
         let _ = crate::debug_log::append(&format!(
             "[screen-capture] captured {}x{}",
             width, height
         ));
 
-        let rgba = extract_rgba(&image)?;
         save_raw_screenshot(width, height, &rgba);
         let jpeg = encode_optimized_jpeg(width, height, rgba)?;
         save_sent_screenshot(width, height, &jpeg);
@@ -143,12 +143,54 @@ pub fn capture_screen(app: AppHandle) -> Result<CaptureResult, String> {
         })
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = &app;
-        let _ = image_base64_unused_marker();
-        Err("Screen capture is only supported on macOS.".to_string())
+        Err("截图仅支持 macOS 与 Windows。".to_string())
     }
+}
+
+/// Grabs the screen and returns `(width, height, tight RGBA8888 rows)`.
+#[cfg(target_os = "macos")]
+fn capture_frame(app: &AppHandle) -> Result<(usize, usize, Vec<u8>), String> {
+    // 硬性前置检查：没有屏幕录制权限就直接报错，绝不静默返回壁纸。
+    // CGDisplayCreateImage 在无权限时不会返回 None，而是返回一张只有壁纸、
+    // 没有窗口内容的图——这就是「截到壁纸」的真正根因，必须在它之前拦截。
+    ensure_screen_capture_permission(app)?;
+
+    let image = capture_fullscreen_image()?;
+    let width = image.width();
+    let height = image.height();
+    let rgba = extract_rgba(&image)?;
+    Ok((width, height, rgba))
+}
+
+/// Windows counterpart of [`capture_frame`]. Mirrors the macOS path, which
+/// snapshots `CGDisplay::main()`: the monitor Windows marks as primary wins,
+/// with the first enumerated monitor as a fallback.
+///
+/// No permission prompt is involved — GDI's `BitBlt` off the desktop DC can
+/// read any window. Resolution is in physical pixels because tao (Tauri's
+/// windowing layer) puts the process in per-monitor DPI aware mode at startup;
+/// without that, a scaled display would capture a cropped top-left corner.
+#[cfg(target_os = "windows")]
+fn capture_frame(_app: &AppHandle) -> Result<(usize, usize, Vec<u8>), String> {
+    use xcap::Monitor;
+
+    let monitors = Monitor::all().map_err(|error| format!("枚举显示器失败：{error}"))?;
+    let monitor = monitors
+        .iter()
+        .find(|monitor| monitor.is_primary().unwrap_or(false))
+        .or_else(|| monitors.first())
+        .ok_or_else(|| "未找到可用的显示器。".to_string())?;
+
+    let image = monitor
+        .capture_image()
+        .map_err(|error| format!("截取屏幕失败：{error}"))?;
+    let width = image.width() as usize;
+    let height = image.height() as usize;
+
+    Ok((width, height, image.into_raw()))
 }
 
 /// Analyzes a screenshot the frontend already captured (or re-analyzes a
@@ -217,9 +259,6 @@ fn strip_data_url_prefix(value: &str) -> &str {
         _ => value,
     }
 }
-
-#[cfg(not(target_os = "macos"))]
-fn image_base64_unused_marker() {}
 
 #[cfg(target_os = "macos")]
 fn ensure_screen_capture_permission(app: &AppHandle) -> Result<(), String> {
@@ -358,7 +397,7 @@ fn extract_rgba(image: &core_graphics::image::CGImage) -> Result<Vec<u8>, String
 /// whenever the screenshot was dense (Chinese text + IDE), which the model
 /// could parse visually but not lexically — i.e. it could see "there is
 /// text here" but not read it.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn encode_optimized_jpeg(width: usize, height: usize, rgba: Vec<u8>) -> Result<Vec<u8>, String> {
     let source = image::RgbaImage::from_raw(width as u32, height as u32, rgba)
         .ok_or_else(|| "截图像素数据无效。".to_string())?;
@@ -392,7 +431,7 @@ fn encode_optimized_jpeg(width: usize, height: usize, rgba: Vec<u8>) -> Result<V
 ///   Meetly 自身窗口遮挡、或是否截到了壁纸/空内容。
 /// - `sent-<ts>-<W>x<H>.jpg`：经过缩放/JPEG 压缩后真正发给模型的那张，用于
 ///   判断模型看到的文字是否清晰可读。
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn screenshot_debug_dir() -> Option<std::path::PathBuf> {
     let home = dirs::home_dir()?;
     let dir = home.join(".meetly").join("screenshots");
@@ -400,7 +439,7 @@ fn screenshot_debug_dir() -> Option<std::path::PathBuf> {
     Some(dir)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn debug_timestamp() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -408,7 +447,7 @@ fn debug_timestamp() -> u128 {
         .unwrap_or_default()
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn save_raw_screenshot(width: usize, height: usize, rgba: &[u8]) {
     let Some(dir) = screenshot_debug_dir() else {
         let _ = crate::debug_log::append("[screen-capture] debug: cannot create screenshots dir");
@@ -429,7 +468,7 @@ fn save_raw_screenshot(width: usize, height: usize, rgba: &[u8]) {
     ));
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn save_sent_screenshot(width: usize, height: usize, jpeg: &[u8]) {
     let Some(dir) = screenshot_debug_dir() else {
         return;

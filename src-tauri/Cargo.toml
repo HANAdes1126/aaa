@@ -52,3 +52,8 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 wasapi = "0.24"
+# Screen capture for the screenshot -> solve loop. Default (non-`wgc`) build
+# captures through GDI BitBlt, which needs no capability prompt and works on
+# every Windows version we support; the `wgc` feature would pull in
+# Windows.Graphics.Capture + D3D11 instead.
+xcap = "0.9.8"
