@@ -1,0 +1,92 @@
+name: verify-build
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+# windows-latest ships the MSVC toolchain, so this builds the msvc target.
+# That matters: on windows-gnu, rustc shells out to `dlltool` once per DLL to
+# synthesise `*.dll_imports.lib`, which is both very slow and fragile (an AV
+# holding the freshly written file yields "reopening ... Permission denied").
+# msvc needs none of that -- import libs come from the prebuilt Windows SDK.
+jobs:
+  build:
+    name: cargo build (windows, msvc)
+    runs-on: windows-latest
+
+    concurrency:
+      group: verify-build-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Pinned to match pnpm-lock.yaml. Do NOT downgrade: pnpm-workspace.yaml
+      # carries `allowBuilds` and no `packages`, and pnpm 9 rejects that with
+      # "packages field missing or empty" on every command.
+      - name: Install pnpm
+        run: npm i -g pnpm@11.25.0
+
+      - name: Verify toolchain
+        shell: bash
+        run: |
+          node -v
+          pnpm -v
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # tauri-build's generate_context! resolves `frontendDist: ../dist`, so the
+      # frontend has to exist before cargo runs or the build script fails.
+      - name: Build frontend
+        run: pnpm build
+
+      # cargo check first: it is much cheaper than a full build and gives a
+      # readable error list if window.rs does not compile.
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --message-format=short 2>&1 | Tee-Object -FilePath check-output.txt
+
+      - name: Upload check output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-check-output
+          path: src-tauri/check-output.txt
+          if-no-files-found: ignore
+
+      # custom-protocol embeds dist/ into the binary instead of pointing at the
+      # dev server. Without it the exe starts with no UI.
+      - name: cargo build (exe)
+        working-directory: src-tauri
+        run: cargo build --features tauri/custom-protocol
+
+      - name: Locate exe
+        id: exe
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXE="src-tauri/target/debug/meetly.exe"
+          test -f "$EXE"
+          ls -l "$EXE"
+          echo "path=$EXE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: meetly-windows-debug-exe
+          path: ${{ steps.exe.outputs.path }}
+          if-no-files-found: error
