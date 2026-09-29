@@ -24,6 +24,14 @@ const EXPANDED_OVERLAY_MIN_WIDTH: f64 = 560.0;
 const EXPANDED_OVERLAY_MIN_HEIGHT: f64 = 480.0;
 const EXPANDED_OVERLAY_MARGIN: f64 = 24.0;
 const DICTATION_BOTTOM_OFFSET: f64 = 56.0;
+/// How long one island drag may run before the polling thread gives up. A
+/// swallowed mouse-release must not leave a thread repositioning the window.
+#[cfg(target_os = "windows")]
+const DRAG_TIMEOUT: Duration = Duration::from_secs(30);
+/// Ceiling on how often the drag loop repositions. It only moves the window
+/// when the cursor actually changed, so this bounds latency, not iterations.
+#[cfg(target_os = "windows")]
+const DRAG_POLL_INTERVAL: Duration = Duration::from_millis(8);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -255,6 +263,13 @@ pub fn apply_island_metrics(app: &AppHandle) {
 
     let size = island_window_size(&window, presentation, &crate::appearance::load());
     let _ = resize_island_window(&window, size);
+
+    // Ghost decides whether the island keeps `WS_EX_NOACTIVATE`, and this is
+    // the only path an appearance save takes. Without re-applying it here,
+    // switching ghost on would leave the shield off — the window style is not
+    // one of the metrics — so the next drag's mousedown would activate the
+    // window and pull the foreground away from the meeting app.
+    let _ = set_island_interactive(&window, presentation);
 }
 
 /**
@@ -318,10 +333,109 @@ pub fn apply_overlay_metrics(app: &AppHandle) {
     );
 }
 
+/// Whether ghost mode is on for this session.
+///
+/// Ghost mode used to mean "invisible" only: the grey-out stylesheet plus
+/// `set_content_protected`. Focus behaviour was decided independently by
+/// `set_island_interactive`, so expanding the panel — or clicking anything in
+/// it — called `set_focus()` and pulled Meetly to the front. On Windows there
+/// is no key-window/active-app split, so that single call switches the whole
+/// frontmost application and is exactly what leaks to whoever is watching the
+/// shared screen. From now on focus is granted on demand: browsing and
+/// clicking never take it, typing does (see `activate_island`).
+fn ghost_mode_enabled() -> bool {
+    crate::appearance::load().ghost_enabled
+}
+
+/// The application that owned the foreground before Meetly borrowed it for a
+/// typing session, so `release_island_focus` can hand it back.
+///
+/// Without this the island would simply stay in front after the first field was
+/// focused — ghost mode would hold only until the user typed once.
+#[cfg(target_os = "windows")]
+static FOREGROUND_BEFORE_TYPING: Mutex<Option<isize>> = Mutex::new(None);
+
+/// Records who is in front, so a later release knows where to return.
+///
+/// Only the first activation of a typing session is recorded: focus moving
+/// between two fields must not overwrite the meeting app with Meetly itself.
+#[cfg(target_os = "windows")]
+fn remember_foreground_owner() {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+    let foreground = unsafe { GetForegroundWindow() };
+    if foreground.is_invalid() {
+        return;
+    }
+
+    let Ok(mut slot) = FOREGROUND_BEFORE_TYPING.lock() else {
+        return;
+    };
+    if slot.is_none() {
+        *slot = Some(foreground.0 as isize);
+        let _ = crate::debug_log::append(&format!(
+            "[window] remembered foreground owner hwnd={:#x}",
+            foreground.0 as isize
+        ));
+    }
+}
+
+/// Hands the foreground back to whoever owned it before Meetly borrowed it.
+///
+/// Shared by `release_island_focus` (typing is over) and the tail of an island
+/// drag, so both paths return to the meeting app the same way.
+///
+/// Returns whether the shell accepted the request. It is not a failure signal:
+/// Windows rate-limits foreground changes, and a background process is allowed
+/// to lose the race, so callers log the answer rather than retrying forever.
+#[cfg(target_os = "windows")]
+fn give_foreground_back() -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, GetAncestor, IsIconic, IsWindow, SetForegroundWindow, ShowWindow,
+        GA_ROOT, SW_RESTORE,
+    };
+
+    let previous = FOREGROUND_BEFORE_TYPING
+        .lock()
+        .ok()
+        .and_then(|mut slot| slot.take());
+
+    let Some(raw) = previous else {
+        return false;
+    };
+
+    let hwnd = HWND(raw as *mut _);
+    if !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
+        return false;
+    }
+
+    let root = unsafe { GetAncestor(hwnd, GA_ROOT) };
+    let root = if root.is_invalid() { hwnd } else { root };
+
+    // A minimised window ignores SetForegroundWindow.
+    if unsafe { IsIconic(root) }.as_bool() {
+        let _ = unsafe { ShowWindow(root, SW_RESTORE) };
+    }
+
+    let mut restored = unsafe { SetForegroundWindow(root) }.as_bool();
+    if !restored {
+        // The shell rate-limits foreground changes; retrying from the top of
+        // the Z-order is the usual way through.
+        let _ = unsafe { BringWindowToTop(root) };
+        restored = unsafe { SetForegroundWindow(root) }.as_bool();
+    }
+
+    restored
+}
+
 fn set_island_interactive(
     window: &WebviewWindow,
     presentation: IslandPresentationMode,
 ) -> Result<(), String> {
+    let expanded = presentation.is_expanded();
+    let ghost = ghost_mode_enabled();
+
     #[cfg(target_os = "macos")]
     {
         use tauri_nspanel::ManagerExt;
@@ -330,26 +444,294 @@ fn set_island_interactive(
             .app_handle()
             .get_webview_panel("island")
             .map_err(|error| format!("Failed to get island panel: {error:?}"))?;
-        if presentation.is_expanded() {
+        if expanded {
             panel.set_becomes_key_only_if_needed(false);
+            // macOS separates the key window from the active app, so making the
+            // panel key does not switch applications — keeping it is safe even
+            // in ghost mode, and it is what lets the text fields type.
             panel.make_key_and_order_front(None);
         } else {
             panel.resign_key_window();
             panel.set_becomes_key_only_if_needed(true);
         }
+
+        let _ = crate::debug_log::append(&format!(
+            "[window] island interactive expanded={expanded} ghost={ghost} focused={expanded}"
+        ));
         return Ok(());
     }
 
     #[cfg(not(target_os = "macos"))]
     {
+        // `WS_EX_NOACTIVATE` is the only thing that stops a click — on a button,
+        // on the transcript, anywhere in the panel — from activating the window,
+        // and on Windows activating means switching the whole frontmost
+        // application. So ghost mode keeps the island non-activating *even
+        // expanded*; `set_focusable(true)` here would hand the shield back and
+        // every button press would leak again. The panel still receives mouse
+        // input while non-activating, so nothing becomes unusable.
+        let interactive = expanded && !ghost;
         window
-            .set_focusable(presentation.is_expanded())
+            .set_focusable(interactive)
             .map_err(|error| error.to_string())?;
-        if presentation.is_expanded() {
+
+        if interactive {
             window.set_focus().map_err(|error| error.to_string())?;
         }
+
+        let _ = crate::debug_log::append(&format!(
+            "[window] island interactive expanded={expanded} ghost={ghost} focusable={interactive} focused={interactive}"
+        ));
         Ok(())
     }
+}
+
+/// Grants the island the foreground on demand — the counterpart of the focus
+/// suppression in `set_island_interactive`.
+///
+/// Ghost mode has to keep the meeting app in front, but a window that is never
+/// activated cannot receive keystrokes, so every text field inside the panel
+/// would be dead weight. The frontend calls this from a delegated `focusin`
+/// handler: reading, scrolling and button clicks never steal focus, putting a
+/// caret in a field does.
+#[tauri::command]
+pub fn activate_island(window: WebviewWindow) -> Result<(), String> {
+    let label = window.label().to_string();
+    let ghost = ghost_mode_enabled();
+
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_nspanel::ManagerExt;
+
+        match window.app_handle().get_webview_panel(&label) {
+            Ok(panel) => panel.make_key_and_order_front(None),
+            Err(error) => {
+                let _ = crate::debug_log::append(&format!(
+                    "[window] activate_island fell back to set_focus error={error:?}"
+                ));
+                window.set_focus().map_err(|error| error.to_string())?;
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Called from `pointerdown`, when the meeting app is still in front.
+        remember_foreground_owner();
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Clearing `WS_EX_NOACTIVATE` first is required: while it is set,
+        // `set_focus()` cannot bring the window forward at all.
+        window
+            .set_focusable(true)
+            .map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+    }
+
+    let _ = crate::debug_log::append(&format!(
+        "[window] activate_island label={label} ghost={ghost} reason=text_input"
+    ));
+
+    Ok(())
+}
+
+/// Hands the foreground back to whoever owned it before a typing session, and
+/// puts `WS_EX_NOACTIVATE` back on the island.
+///
+/// `activate_island` is the single moment ghost mode gives up the foreground;
+/// this is its counterpart. The frontend fires it when the caret leaves the
+/// fields, and when the panel collapses.
+#[tauri::command]
+pub fn release_island_focus(window: WebviewWindow) -> Result<(), String> {
+    let label = window.label().to_string();
+    let ghost = ghost_mode_enabled();
+
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_nspanel::ManagerExt;
+
+        if let Ok(panel) = window.app_handle().get_webview_panel(&label) {
+            panel.resign_key_window();
+            panel.set_becomes_key_only_if_needed(true);
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    let restored = {
+        let restored = give_foreground_back();
+
+        // The shield goes back on either way: the next click on a button must
+        // not be able to activate the window again.
+        if ghost {
+            if let Err(error) = window.set_focusable(false) {
+                let _ = crate::debug_log::append(&format!(
+                    "[window] failed to restore non-activating flag error={error}"
+                ));
+            }
+        }
+
+        restored
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let restored = false;
+
+    let _ = crate::debug_log::append(&format!(
+        "[window] release_island_focus label={label} ghost={ghost} restored={restored}"
+    ));
+
+    Ok(())
+}
+
+/// Moves the island by following the cursor, instead of handing the move loop
+/// to the shell.
+///
+/// `start_dragging()` is deliberately not used here. On Windows it posts
+/// `WM_NCLBUTTONDOWN` with `HTCAPTION` and lets the shell run its modal move
+/// loop, and entering that loop activates the window — a single drag would put
+/// Meetly back in front and leave the meeting app behind it for the rest of the
+/// session. That is the same leak `set_island_interactive` exists to prevent,
+/// which is why the drag has to move the window itself.
+///
+/// Every reposition goes through `set_position`, which tao implements as
+/// `SetWindowPos(.., SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE)`. The window
+/// follows the cursor and the foreground never changes hands.
+///
+/// Returns as soon as the worker is started, so the invoke does not block the
+/// IPC thread for the length of the drag.
+#[tauri::command]
+pub fn drag_island(window: WebviewWindow) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        // Recorded before the drag in case the shell activates the window
+        // anyway, so the tail of the drag can hand the foreground back.
+        remember_foreground_owner();
+
+        let handle = window.clone();
+        std::thread::spawn(move || run_island_drag(handle));
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        // macOS moves the NSPanel itself. There is no activation to avoid:
+        // the panel is keyed separately from the active application.
+        window.start_dragging().map_err(|error| error.to_string())
+    }
+}
+
+/// The worker half of `drag_island`. Repositions `window` until the left mouse
+/// button is released, the cursor stops being readable, or `DRAG_TIMEOUT`
+/// elapses, then restores the ghost-mode shield and reports what happened.
+#[cfg(target_os = "windows")]
+fn run_island_drag(window: WebviewWindow) {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    let label = window.label().to_string();
+    let ghost = ghost_mode_enabled();
+
+    let origin = match window.outer_position() {
+        Ok(position) => position,
+        Err(error) => {
+            let _ = crate::debug_log::append(&format!(
+                "[window] island drag aborted label={label} error={error}"
+            ));
+            return;
+        }
+    };
+
+    let mut cursor = POINT::default();
+    if unsafe { GetCursorPos(&mut cursor) }.is_err() {
+        let _ = crate::debug_log::append(&format!(
+            "[window] island drag aborted label={label} error=cursor unavailable"
+        ));
+        return;
+    }
+
+    // The window is repositioned from this grab point plus the total cursor
+    // delta, not from the previous frame. Absolute arithmetic means a dropped
+    // or reordered `SWP_ASYNCWINDOWPOS` cannot accumulate drift.
+    let grab = (cursor.x, cursor.y);
+    let mut latest = grab;
+
+    let _ = crate::debug_log::append(&format!(
+        "[window] island drag begin label={label} ghost={ghost} origin=({},{}) grab=({},{})",
+        origin.x, origin.y, grab.0, grab.1
+    ));
+
+    let deadline = std::time::Instant::now() + DRAG_TIMEOUT;
+    let mut moves: u32 = 0;
+
+    loop {
+        std::thread::sleep(DRAG_POLL_INTERVAL);
+
+        // The button state is read from the system rather than from a
+        // mouse-release event: the island is non-activating, so it never holds
+        // the capture that would guarantee the release reaches the webview.
+        let pressed = (unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } as u16) & 0x8000 != 0;
+        if !pressed || std::time::Instant::now() >= deadline {
+            break;
+        }
+
+        let mut now = POINT::default();
+        if unsafe { GetCursorPos(&mut now) }.is_err() {
+            break;
+        }
+        if (now.x, now.y) == latest {
+            continue;
+        }
+        latest = (now.x, now.y);
+
+        let target = Position::Physical(PhysicalPosition::new(
+            origin.x + (now.x - grab.0),
+            origin.y + (now.y - grab.1),
+        ));
+        if window.set_position(target).is_err() {
+            break;
+        }
+        moves += 1;
+    }
+
+    // `stolen` is the measurement that matters for verification: if the drag
+    // activated the window, the foreground is Meetly itself. Any non-zero
+    // count here in the logs means the SWP_NOACTIVATE path failed.
+    let stolen = island_owns_foreground(&window);
+    let restored = if stolen { give_foreground_back() } else { false };
+
+    // The shield goes back on either way: a drag must never leave the window
+    // activatable, or the next button press leaks the foreground again.
+    if ghost {
+        if let Err(error) = window.set_focusable(false) {
+            let _ = crate::debug_log::append(&format!(
+                "[window] failed to restore non-activating flag after drag error={error}"
+            ));
+        }
+    }
+
+    let _ = crate::debug_log::append(&format!(
+        "[window] island drag end label={label} ghost={ghost} moves={moves} delta=({},{}) \
+         stolen={stolen} restored={restored}",
+        latest.0 - grab.0,
+        latest.1 - grab.1
+    ));
+}
+
+/// Whether the island itself currently owns the foreground, i.e. the drag
+/// handed it the active window.
+#[cfg(target_os = "windows")]
+fn island_owns_foreground(window: &WebviewWindow) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+    let Ok(hwnd) = window.hwnd() else {
+        return false;
+    };
+
+    let foreground = unsafe { GetForegroundWindow() };
+    !foreground.is_invalid() && foreground.0 == hwnd.0
 }
 
 #[tauri::command]
@@ -503,7 +885,19 @@ fn prepare_compact_overlay_on_main(app: &AppHandle, kind: &str) {
 pub fn set_island_visible(window: WebviewWindow, visible: bool) -> Result<(), String> {
     if visible {
         window.show().map_err(|error| error.to_string())?;
-        window.set_focus().map_err(|error| error.to_string())?;
+
+        // Same rule as `set_island_interactive`: unhiding the island from a
+        // button must not yank the foreground away in ghost mode. `show()`
+        // alone does not activate the window.
+        let ghost = ghost_mode_enabled();
+        if !ghost {
+            window.set_focus().map_err(|error| error.to_string())?;
+        }
+
+        let _ = crate::debug_log::append(&format!(
+            "[window] island visible=true ghost={ghost} focused={}",
+            !ghost
+        ));
     } else {
         window.hide().map_err(|error| error.to_string())?;
     }
@@ -536,10 +930,20 @@ pub fn recover_island_window(app: &AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
 
     window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())?;
+
+    // Recovery only has to make the island visible again — the user is not
+    // about to type — so ghost mode keeps the foreground where it was.
+    let ghost = ghost_mode_enabled();
+    if !ghost {
+        window.set_focus().map_err(|error| error.to_string())?;
+    }
+
     app.emit("island_visibility_changed", true)
         .map_err(|error| error.to_string())?;
-    let _ = crate::debug_log::append("[menu-bar] restored Meetly island");
+    let _ = crate::debug_log::append(&format!(
+        "[menu-bar] restored Meetly island ghost={ghost} focused={}",
+        !ghost
+    ));
     Ok(())
 }
 

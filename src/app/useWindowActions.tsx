@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, type MouseEvent } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { loadAppearance, patchAppearance } from "./appearance";
-import { isTauriRuntime, safeInvoke } from "./platform";
+import { debugLog, isTauriRuntime, safeInvoke } from "./platform";
 import type { OpenPanel } from "./types";
 import type { MeetlyState } from "./useMeetlyState";
 
@@ -27,6 +27,92 @@ export function useWindowActions(ctx: MeetlyState) {
       });
   }, [setIsStealthOn]);
 
+  // Ghost mode stops the island from stealing the foreground app, which also
+  // means an un-activated window never receives keystrokes — every text field
+  // in the panel would be dead weight. Typing is the one case where taking
+  // focus is both unavoidable and expected, so it is granted on demand from a
+  // single delegated listener instead of wiring each field by hand.
+  //
+  // `pointerdown` fires before the caret lands and works even when the window
+  // is not activated; `focusin` covers reaching a field with Tab. A short
+  // window keeps the pair from invoking twice for the same interaction.
+  const stealthOn = ctx.isStealthOn;
+
+  useEffect(() => {
+    if (!stealthOn || !isTauriRuntime()) {
+      return;
+    }
+
+    let lastActivationAt = 0;
+
+    const activateForTyping = (target: EventTarget | null) => {
+      const element = target as HTMLElement | null;
+      if (!element) {
+        return;
+      }
+
+      const wantsKeyboard =
+        element.tagName === "INPUT" ||
+        element.tagName === "TEXTAREA" ||
+        element.isContentEditable;
+
+      if (!wantsKeyboard) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastActivationAt < 400) {
+        return;
+      }
+      lastActivationAt = now;
+
+      debugLog(`[island] typing target=${element.tagName} -> activate_island`);
+      void safeInvoke("activate_island").catch((error) => {
+        console.error("Failed to activate island for typing:", error);
+      });
+    };
+
+    // The caret leaving the fields is the cue that typing is over, so the
+    // foreground goes back to the meeting app. Moving between two fields keeps
+    // it (otherwise every Tab would bounce the shared window back and forth).
+    const handleFocusOut = (event: FocusEvent) => {
+      const next = event.relatedTarget as HTMLElement | null;
+      const stillTyping =
+        !!next &&
+        (next.tagName === "INPUT" ||
+          next.tagName === "TEXTAREA" ||
+          next.isContentEditable);
+
+      if (stillTyping) {
+        return;
+      }
+
+      debugLog("[island] caret left the fields -> release_island_focus");
+      void safeInvoke("release_island_focus").catch((error) => {
+        console.error("Failed to release island focus:", error);
+      });
+    };
+
+    const handlePointerDown = (event: Event) => activateForTyping(event.target);
+    const handleFocusIn = (event: Event) => activateForTyping(event.target);
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+    };
+  }, [stealthOn]);
+
+  // Dragging moves the window from the Rust side rather than through the
+  // native `startDragging()`. On Windows that call hands the move loop to the
+  // shell, and entering the loop activates the window — one drag would undo
+  // ghost mode for the rest of the session. The Rust command follows the
+  // cursor with `SWP_NOACTIVATE` instead, so the meeting app keeps the
+  // foreground. `startDragging` stays as the fallback for a runtime that does
+  // not have the command (an older installed build).
   const startIslandDrag = useCallback(async (event: MouseEvent<HTMLElement>) => {
     if (event.button !== 0 || !isTauriRuntime()) {
       return;
@@ -34,10 +120,18 @@ export function useWindowActions(ctx: MeetlyState) {
 
     event.preventDefault();
 
+    debugLog("[island] drag start -> drag_island");
+
     try {
-      await getCurrentWindow().startDragging();
+      await safeInvoke("drag_island");
     } catch (error) {
-      console.error("Failed to start island drag:", error);
+      console.error("Failed to drag island without activating:", error);
+
+      try {
+        await getCurrentWindow().startDragging();
+      } catch (fallbackError) {
+        console.error("Failed to start island drag:", fallbackError);
+      }
     }
   }, []);
 
@@ -45,10 +139,21 @@ export function useWindowActions(ctx: MeetlyState) {
     await safeInvoke("set_island_height", { height: expanded ? 600 : 54 });
   }, []);
 
-  const setPanel = useCallback(async (panel: OpenPanel) => {
-    ctx.setOpenPanel(panel);
-    await resizeIsland(panel !== null);
-  }, [ctx, resizeIsland]);
+  const setPanel = useCallback(
+    async (panel: OpenPanel) => {
+      ctx.setOpenPanel(panel);
+      await resizeIsland(panel !== null);
+
+      // Collapsing tears the fields down, which can skip `focusout` entirely —
+      // release here too so a closed panel never keeps the foreground.
+      if (panel === null && stealthOn) {
+        await safeInvoke("release_island_focus").catch((error) => {
+          console.error("Failed to release island focus:", error);
+        });
+      }
+    },
+    [ctx, resizeIsland, stealthOn]
+  );
 
   const toggleHidden = useCallback(async () => {
     ctx.setIsHidden((current) => !current);

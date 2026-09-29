@@ -37,6 +37,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             window::set_island_height,
             window::set_island_visible,
+            window::activate_island,
+            window::release_island_focus,
+            window::drag_island,
             window::set_voice_overlay_presentation_mode,
             window::mark_voice_overlay_manually_positioned,
             window::set_stealth,
