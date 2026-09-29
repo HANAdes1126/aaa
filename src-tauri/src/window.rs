@@ -263,6 +263,13 @@ pub fn apply_island_metrics(app: &AppHandle) {
 
     let size = island_window_size(&window, presentation, &crate::appearance::load());
     let _ = resize_island_window(&window, size);
+
+    // Ghost decides whether the island keeps `WS_EX_NOACTIVATE`, and this is
+    // the only path an appearance save takes. Without re-applying it here,
+    // switching ghost on would leave the shield off — the window style is not
+    // one of the metrics — so the next drag's mousedown would activate the
+    // window and pull the foreground away from the meeting app.
+    let _ = set_island_interactive(&window, presentation);
 }
 
 /**
