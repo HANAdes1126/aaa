@@ -106,6 +106,13 @@ export function useWindowActions(ctx: MeetlyState) {
     };
   }, [stealthOn]);
 
+  // Dragging moves the window from the Rust side rather than through the
+  // native `startDragging()`. On Windows that call hands the move loop to the
+  // shell, and entering the loop activates the window — one drag would undo
+  // ghost mode for the rest of the session. The Rust command follows the
+  // cursor with `SWP_NOACTIVATE` instead, so the meeting app keeps the
+  // foreground. `startDragging` stays as the fallback for a runtime that does
+  // not have the command (an older installed build).
   const startIslandDrag = useCallback(async (event: MouseEvent<HTMLElement>) => {
     if (event.button !== 0 || !isTauriRuntime()) {
       return;
@@ -113,10 +120,18 @@ export function useWindowActions(ctx: MeetlyState) {
 
     event.preventDefault();
 
+    debugLog("[island] drag start -> drag_island");
+
     try {
-      await getCurrentWindow().startDragging();
+      await safeInvoke("drag_island");
     } catch (error) {
-      console.error("Failed to start island drag:", error);
+      console.error("Failed to drag island without activating:", error);
+
+      try {
+        await getCurrentWindow().startDragging();
+      } catch (fallbackError) {
+        console.error("Failed to start island drag:", fallbackError);
+      }
     }
   }, []);
 
