@@ -1,7 +1,6 @@
 use super::{
     llm_http_client, normalize_kind, AssistantSuggestion, ChatMessage,
-    LlmCapabilities, LlmProvider, ThinkingControl, LLM_NON_STREAM_TOTAL_TIMEOUT,
-    LLM_STREAM_IDLE_TIMEOUT, KIND_KNOWLEDGE,
+    LlmCapabilities, LlmProvider, ThinkingControl, KIND_KNOWLEDGE,
 };
 use crate::providers::config::ProviderId;
 use crate::providers::credentials::ResolvedCredentials;
@@ -82,16 +81,9 @@ impl OpenAiCompatibleLlm {
             return self.complete_streaming(&body).await;
         }
 
-        // Cap the wait here rather than on the client: a non-streaming reply
-        // arrives in one piece, so any longer wait is the gateway stalling.
-        let response = tokio::time::timeout(LLM_NON_STREAM_TOTAL_TIMEOUT, self.send_request(&body))
-            .await
-            .map_err(|_| {
-                anyhow!(
-                    "LLM request timed out after {}s.",
-                    LLM_NON_STREAM_TOTAL_TIMEOUT.as_secs()
-                )
-            })??;
+        // No cap on the wait: a non-streaming reply is a whole answer arriving
+        // at once, and a slow model is still a working model.
+        let response = self.send_request(&body).await?;
         let status = response.status();
         if status.is_success() {
             return parse_non_stream_response(response).await;
@@ -141,22 +133,11 @@ impl OpenAiCompatibleLlm {
         let _ = crate::debug_log::append("[llm] streaming retry accepted");
         let mut bytes = response.bytes_stream();
         let mut payload = String::new();
-        loop {
-            // Each wait is individually capped: an SSE stream that opens and
-            // then goes silent looks exactly like a slow model otherwise.
-            match tokio::time::timeout(LLM_STREAM_IDLE_TIMEOUT, bytes.next()).await {
-                Ok(Some(chunk)) => {
-                    let chunk = chunk.context("Failed to read the LLM streaming response")?;
-                    payload.push_str(&String::from_utf8_lossy(&chunk));
-                }
-                Ok(None) => break,
-                Err(_) => {
-                    return Err(anyhow!(
-                        "LLM 响应流中断：等待超过 {} 秒没有新数据。",
-                        LLM_STREAM_IDLE_TIMEOUT.as_secs()
-                    ));
-                }
-            }
+        // No per-chunk budget either: see the note on `LLM_CONNECT_TIMEOUT` in
+        // `super`. A silent gap is how a reasoning model looks, not a stall.
+        while let Some(chunk) = bytes.next().await {
+            let chunk = chunk.context("Failed to read the LLM streaming response")?;
+            payload.push_str(&String::from_utf8_lossy(&chunk));
         }
         parse_sse_content(&payload)
     }

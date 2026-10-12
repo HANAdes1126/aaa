@@ -47,51 +47,28 @@ pub(crate) fn remember_non_stream_rejected(base_url: &str) {
     }
 }
 
-/// Timeout budget for one LLM round trip.
+/// The only clock left in the LLM path: how long a TCP/TLS connect may take.
 ///
-/// Without these, a gateway that accepts the connection and then stalls hangs
-/// the assistant forever: `reqwest` has no default timeout, and the caller
-/// (coach, manual ask, vision) waits on the future indefinitely. A stalled
-/// coach is worse than a failed one — the UI stays "thinking" and every later
-/// question is dropped as already-in-flight, so the whole session looks dead.
+/// Every budget that used to bound a *response* is gone — first byte, stream
+/// idle, the non-streaming wall clock, and the per-run caps in
+/// `app::agent_tool_loop`. They existed to stop a gateway that accepts a
+/// connection and then goes quiet, but that same silence is exactly what a
+/// reasoning model looks like while it thinks, so they ended up throwing away
+/// healthy long answers: the history kept in this file records a 10s idle
+/// window killing three good runs in a row on a model that was working
+/// normally. Waiting is the user's call now — starting a new conversation
+/// abandons the request without needing a timer.
 ///
-/// Three layers, because they catch different failures:
-/// - `connect`: TCP/TLS never completes (bad network, dead endpoint).
-/// - `first_byte`: accepted but the model never starts emitting (queue stall).
-///   This is the common "hangs for minutes" case.
-/// - `idle`: started streaming then stopped mid-answer (dropped SSE).
-///
-/// There is deliberately no overall wall-clock cap on the stream read: a long
-/// but healthy answer must not be cut off. `first_byte` + `idle` already bound
-/// a stalled stream, and the caller (see `agent_tool_loop`) applies the total
-/// budget per workflow.
-///
-/// The idle budget is sized for reasoning models, not for flash ones. Measured
-/// 2026-09-12 on a screenshot coding question: claude-opus-5 sent its first
-/// byte in 5-6s and then went quiet while thinking, so a 10s idle window killed
-/// three runs in a row (`stream stalled saw_first_byte=true`) even though the
-/// model was working normally. deepseek-v4-flash on the same workload already
-/// needed 18.8s end to end. A reasoning pause is not a stall, so the window has
-/// to clear the longest *gap between tokens*, not the total answer time.
-///
-/// `first_byte` is generous for the same reason, plus image upload: on a 523KB
-/// screenshot claude-opus-5 took 48s to emit its first byte. Text-only calls
-/// never come close, so the loose bound costs nothing in the common case — it
-/// only decides whether a deliberately chosen strong model works at all.
+/// Connect is different in kind, so it stays capped: nothing has been sent yet,
+/// there is no work in progress to protect, and an unreachable endpoint is a
+/// configuration error the user should hear about at once rather than a long
+/// task worth waiting for.
 pub const LLM_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-pub const LLM_FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(90);
-pub const LLM_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
-
-/// Wall-clock cap for one non-streaming completion. Streaming answers are
-/// bounded by `LLM_FIRST_BYTE_TIMEOUT` + `LLM_STREAM_IDLE_TIMEOUT` instead,
-/// so a long-but-healthy answer is never truncated mid-sentence.
-pub const LLM_NON_STREAM_TOTAL_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// Builds the HTTP client used for every LLM request.
 ///
-/// Shared so no call site can accidentally get an unbounded client again.
-/// Only the connect phase is capped here — capping the whole request would
-/// kill legitimately long streaming answers.
+/// Shared so no call site can pick its own budgets. Connect is the only phase
+/// that is capped — see `LLM_CONNECT_TIMEOUT`.
 pub fn llm_http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(LLM_CONNECT_TIMEOUT)

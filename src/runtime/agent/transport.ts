@@ -4,18 +4,20 @@ import type { AssistantSuggestion, CoachToolTrace } from "../../app/types";
 import type { AgentPrompt } from "./prompt";
 
 /**
- * Per-request cap on the frontend side.
+ * There is deliberately no timeout on a coach request.
  *
- * This is the tightest budget in the stack, so it decides when the user sees a
- * failure regardless of what Rust allows. It was 10s, which is fine for a flash
- * model answering a 八股 question but cuts off anything that reasons: measured
- * 2026-09-12, a screenshot coding question took 18.8s on deepseek-v4-flash and
- * claude-opus-5 was still thinking well past that. Keep it just under the Rust
- * stream idle budget (90s) so the backend error message — which knows *why* it
- * failed — wins the race instead of this generic one.
+ * There used to be one: an 85s per-request cap here, raced against a 100s
+ * watchdog in `AgentRuntime`. Because the frontend held the tightest budget in
+ * the stack, *it* — not the Rust limits — was what actually decided when a long
+ * answer died. A reasoning model that takes minutes is doing its job, not
+ * stalling; cutting it off mid-answer throws away exactly the part the user was
+ * waiting for, and the one-shot retry it triggered doubled the wait instead of
+ * shortening it.
+ *
+ * A run that really hangs is abandoned by the user starting a new conversation,
+ * which invalidates the in-flight result through the epoch/generation guards in
+ * `AgentRuntime` rather than through a clock.
  */
-const COACH_REQUEST_TIMEOUT_MS = 85_000;
-
 export type AgentTransport = {
   complete(prompt: AgentPrompt, callbacks?: AgentTransportCallbacks): Promise<AssistantSuggestion>;
 };
@@ -61,15 +63,11 @@ export function createPiCoachTransport(opts?: { prefetch?: PrefetchProvider }): 
       }
 
       const mode = resolveCoachMode(prompt.snapshot.sessionKind, prompt.snapshot.perspective);
-      const suggestion = await runWithOneTimeoutRetry(
-        () => invoke<AssistantSuggestion>("complete_assistant_with_question", {
-          mode,
-          question: prompt.text,
-          runId: prompt.wake.id,
-        }),
-        COACH_REQUEST_TIMEOUT_MS,
-        () => callbacks?.onRetry?.(2, "request_timeout")
-      );
+      const suggestion = await invoke<AssistantSuggestion>("complete_assistant_with_question", {
+        mode,
+        question: prompt.text,
+        runId: prompt.wake.id,
+      });
 
       if (!suggestion.answer.trim()) {
         throw new Error("场边教练返回了空内容。");
@@ -78,43 +76,4 @@ export function createPiCoachTransport(opts?: { prefetch?: PrefetchProvider }): 
       return suggestion;
     },
   };
-}
-
-export async function runWithOneTimeoutRetry<T>(
-  operation: () => Promise<T>,
-  timeoutMs: number,
-  onRetry?: () => void
-): Promise<T> {
-  try {
-    return await withTimeout(operation(), timeoutMs);
-  } catch (error) {
-    if (!(error instanceof CoachRequestTimeoutError)) throw error;
-    onRetry?.();
-    try {
-      return await withTimeout(operation(), timeoutMs);
-    } catch (retryError) {
-      if (retryError instanceof CoachRequestTimeoutError) {
-        throw new Error(`场边教练连续两次超过 ${Math.round(timeoutMs / 1000)} 秒，已结束本轮请求。`);
-      }
-      throw retryError;
-    }
-  }
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new CoachRequestTimeoutError()), timeoutMs);
-  });
-
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timeoutId !== null) clearTimeout(timeoutId);
-  });
-}
-
-class CoachRequestTimeoutError extends Error {
-  constructor() {
-    super("COACH_REQUEST_TIMEOUT");
-    this.name = "CoachRequestTimeoutError";
-  }
 }

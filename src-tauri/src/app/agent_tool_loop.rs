@@ -1,8 +1,7 @@
 use crate::providers::config::{ProviderId, ProviderKind};
 use crate::providers::llm::{
     llm_http_client, non_stream_known_unsupported, parse_suggestion, remember_non_stream_rejected,
-    AssistantSuggestion, ChatMessage, ChatRole, LLM_FIRST_BYTE_TIMEOUT,
-    LLM_NON_STREAM_TOTAL_TIMEOUT, LLM_STREAM_IDLE_TIMEOUT,
+    AssistantSuggestion, ChatMessage, ChatRole,
 };
 use crate::providers::{credentials, web};
 use futures_util::StreamExt;
@@ -17,27 +16,15 @@ const MAX_SEARCH_QUERY_CHARS: usize = 300;
 const CURRENT_INFORMATION_FRESHNESS_DAYS: u16 = 14;
 const MAX_LOG_CONTENT_CHARS: usize = 2_000;
 
-/// Wall-clock cap for one whole agent run. Every individual request is already
-/// bounded by the LLM connect/first-byte/idle timeouts, but a run can chain up
-/// to `MAX_AGENT_STEPS` of them, and several slow steps in a row would still
-/// add up to a minute of silence with no way to tell a stall from progress.
+/// Wall-clock caps used to live here for one whole agent run (150s) and for
+/// vision (180s). Both are gone, together with the per-request LLM budgets.
 ///
-/// Sized above the per-request idle budget (90s), otherwise this cap would be
-/// the thing that kills a slow reasoning model and the inner timeout would
-/// never get a say.
-const AGENT_LOOP_TOTAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(150);
-
-
-/// Vision sends a base64 screenshot, so the upload alone is slower than text.
-/// Still capped: a stall here leaves the panel stuck on "分析中" forever.
-///
-/// A screenshot coding question is by far the slowest thing this app does, and
-/// also the one the user is willing to wait for — it is a deliberate keypress,
-/// not a live coach turn. Measured 2026-09-12 on a real 523KB screenshot, run
-/// serially: deepseek-v4-pro 15.3s, claude-opus-5 65.9s with the first byte
-/// only arriving at 48s. The budget must clear the slowest model a user would
-/// deliberately choose, otherwise choosing it silently never works.
-const AGENT_VISION_TOTAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+/// A run that chains several slow steps is a run that is working, not a run
+/// that is stuck, and every one of those numbers was measured against specific
+/// models on specific days — picking a slower or stronger model quietly fell
+/// outside them and lost the answer. Waiting is the user's call to make: they
+/// start a new conversation if they are done, which abandons the run without
+/// needing a timer.
 /// Below this user-message character count we skip the web_search tool loop
 /// entirely. Voice queries are short and live, so paying a 1-3s tool round
 /// trip for a 1-2 sentence answer is the wrong trade. Tuned for Chinese
@@ -253,26 +240,7 @@ pub(crate) async fn complete(
     system_prompt: String,
     messages: Vec<ChatMessage>,
 ) -> Result<AssistantSuggestion, String> {
-    match tokio::time::timeout(
-        AGENT_LOOP_TOTAL_TIMEOUT,
-        run_agent_loop(app, workflow, trace_id, system_prompt, messages),
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(_) => {
-            let _ = crate::debug_log::append(&format!(
-                "[agent-tool-loop] run timed out workflow={} timeout_s={}",
-                workflow.as_str(),
-                AGENT_LOOP_TOTAL_TIMEOUT.as_secs()
-            ));
-            Err(format!(
-                "{} 超过 {} 秒仍未完成，已放弃本轮请求。",
-                workflow.display_name(),
-                AGENT_LOOP_TOTAL_TIMEOUT.as_secs()
-            ))
-        }
-    }
+    run_agent_loop(app, workflow, trace_id, system_prompt, messages).await
 }
 
 async fn run_agent_loop(
@@ -691,30 +659,17 @@ pub(crate) async fn complete_vision(
     ));
 
     let client = llm_http_client();
-    let response = tokio::time::timeout(
-        AGENT_VISION_TOTAL_TIMEOUT,
-        request_completion(
-            &client,
-            &credentials.base_url,
-            &credentials.api_key,
-            &credentials.vision_model,
-            &request_messages,
-            &[],
-            false,
-            &CompletionTuning::default_text(),
-        ),
+    let response = request_completion(
+        &client,
+        &credentials.base_url,
+        &credentials.api_key,
+        &credentials.vision_model,
+        &request_messages,
+        &[],
+        false,
+        &CompletionTuning::default_text(),
     )
     .await
-    .map_err(|_| {
-        let _ = crate::debug_log::append(&format!(
-            "[agent-vision] run timed out timeout_s={}",
-            AGENT_VISION_TOTAL_TIMEOUT.as_secs()
-        ));
-        format!(
-            "图片分析超过 {} 秒未完成，已放弃本轮请求。",
-            AGENT_VISION_TOTAL_TIMEOUT.as_secs()
-        )
-    })?
     .map_err(|error| {
         let _ = crate::debug_log::append(&format!(
             "[agent-vision] run failed error={}",
@@ -771,34 +726,22 @@ async fn request_completion(
             .await;
     }
 
-    // Non-streaming replies arrive whole, so the whole wait can be capped.
-    // Streaming replies cannot (a long answer would be cut off) — they are
-    // bounded per chunk further down instead.
-    let response = tokio::time::timeout(
-        LLM_NON_STREAM_TOTAL_TIMEOUT,
-        client.post(base_url).bearer_auth(api_key).json(&body).send(),
-    )
-    .await
-    .map_err(|_| {
-        log_request_timing(model, started_at, None, "non_stream_timeout");
-        format!(
-            "LLM 请求等待响应超过 {} 秒，已放弃。",
-            LLM_NON_STREAM_TOTAL_TIMEOUT.as_secs()
-        )
-    })?
-    .map_err(|error| error.to_string())?;
+    // Neither branch is capped any more. A non-streaming reply is still just a
+    // model thinking, and from the outside "waiting for the first token" is not
+    // distinguishable from "slow".
+    let response = client
+        .post(base_url)
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
     let status = response.status();
     if status.is_success() {
-        let response = tokio::time::timeout(
-            LLM_NON_STREAM_TOTAL_TIMEOUT,
-            response.json::<CompletionResponse>(),
-        )
-        .await
-        .map_err(|_| {
-            log_request_timing(model, started_at, None, "non_stream_body_timeout");
-            "LLM 响应读取超时。".to_string()
-        })?
-        .map_err(|error| error.to_string())?;
+        let response = response
+            .json::<CompletionResponse>()
+            .await
+            .map_err(|error| error.to_string())?;
         log_request_timing(model, started_at, None, "non_stream_ok");
         return Ok(response);
     }
@@ -854,37 +797,16 @@ async fn request_streaming_completion(
     let mut bytes = response.bytes_stream();
     let mut payload = String::new();
     let mut first_byte_at: Option<u64> = None;
-    loop {
-        // Tighter budget before the first byte than between chunks: a model
-        // that accepted the request and then never emits is the failure this
-        // guard exists for, and it is invisible without a clock on the read.
-        let budget = if first_byte_at.is_none() {
-            LLM_FIRST_BYTE_TIMEOUT
-        } else {
-            LLM_STREAM_IDLE_TIMEOUT
-        };
-        match tokio::time::timeout(budget, bytes.next()).await {
-            Ok(Some(chunk)) => {
-                let chunk = chunk.map_err(|error| error.to_string())?;
-                if first_byte_at.is_none() {
-                    first_byte_at = Some(unix_time_ms());
-                }
-                payload.push_str(&String::from_utf8_lossy(&chunk));
-            }
-            Ok(None) => break,
-            Err(_) => {
-                log_request_timing(model, started_at, first_byte_at, "stream_timeout");
-                let _ = crate::debug_log::append(&format!(
-                    "[agent-llm] stream stalled elapsed_ms={} saw_first_byte={}",
-                    unix_time_ms().saturating_sub(started_at),
-                    first_byte_at.is_some()
-                ));
-                return Err(format!(
-                    "LLM 响应流中断：等待超过 {} 秒没有新数据。",
-                    budget.as_secs()
-                ));
-            }
+    // The per-chunk budget is gone: a reasoning model can stay silent for a
+    // long time between tokens, and that silence is not a stall. `first_byte_at`
+    // is still recorded, because the latency log is what the old budget was
+    // tuned from.
+    while let Some(chunk) = bytes.next().await {
+        let chunk = chunk.map_err(|error| error.to_string())?;
+        if first_byte_at.is_none() {
+            first_byte_at = Some(unix_time_ms());
         }
+        payload.push_str(&String::from_utf8_lossy(&chunk));
     }
     let result = completion_from_sse(&payload);
     log_request_timing(model, started_at, first_byte_at, "stream_ok");

@@ -86,50 +86,51 @@ async function nextTurn() {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-// --- Stalled-run watchdog -------------------------------------------------
-// A transport that never settles used to pin `inFlight` forever: every later
-// question was dropped as "already running" and the panel looked dead. The
-// watchdog must both surface an error and release the runtime.
+// --- No cap on a running answer -------------------------------------------
+// A 100s watchdog used to live here. It fired on any run that outlived its
+// budget — including the long-but-healthy ones it was never meant to touch —
+// so it is gone, together with the transport's 85s cap. A promise that never
+// settles must now surface no error at all; the exit is the user's cancel
+// (new conversation), which frees the runtime on the spot.
 {
   const errors: string[] = [];
-  const woken: string[] = [];
-  let released = false;
+  const messages: string[] = [];
+  let calls = 0;
 
   const stalledRuntime = new AgentRuntime(
     new ContextStore(),
-    { complete: () => new Promise<AssistantSuggestion>(() => {}) },
     {
-      onMessage: () => assert.fail("stalled transport must not deliver a message"),
-      onError: (message) => errors.push(message),
-      onWakeStart: () => {
-        released = true;
+      complete: () => {
+        calls += 1;
+        // The first request never settles; anything after it answers normally.
+        return calls === 1
+          ? new Promise<AssistantSuggestion>(() => {})
+          : Promise.resolve(answer);
       },
     },
-    60
+    {
+      onMessage: (suggestion) => messages.push(suggestion.answer),
+      onError: (message) => errors.push(message),
+    }
   );
 
   stalledRuntime.wake(createSttSignalWake("a question that hangs", "test_signal"));
   await new Promise<void>((resolve) => setTimeout(resolve, 150));
 
-  assert.equal(errors.length, 1, "stalled run must report one error");
-  assert.ok(
-    errors[0].includes("已放弃"),
-    `watchdog message should tell the user it gave up, got: ${errors[0]}`
-  );
+  assert.equal(calls, 1);
+  assert.deepEqual(errors, [], "a slow run must not be failed by a clock");
+  assert.deepEqual(messages, [], "a parked run must not deliver anything");
 
-  // The critical assertion: the runtime released, so the next question runs.
-  const recovered = new AgentRuntime(
-    new ContextStore(),
-    { complete: async () => answer },
-    { onMessage: () => woken.push("ok"), onError: (m) => assert.fail(m) },
-    60
-  );
-  recovered.wake(createSttSignalWake("a question after the stall", "test_signal"));
+  stalledRuntime.cancel("user_cleared_conversation");
+  stalledRuntime.wake(createSttSignalWake("a question after the cancel", "test_signal"));
   await new Promise<void>((resolve) => setTimeout(resolve, 50));
-  assert.deepEqual(woken, ["ok"], "a fresh question must still work after a stall");
-  assert.ok(released);
+  assert.deepEqual(
+    messages,
+    ["coach answer"],
+    "a new conversation must not wait for the abandoned run"
+  );
 
-  console.log("stalled-run watchdog tests passed");
+  console.log("uncapped-run tests passed");
 }
 
 // --- Cancelling an in-flight run ------------------------------------------
@@ -140,7 +141,7 @@ async function nextTurn() {
 // resolves. That is the case the bug lived in — `inFlight` was still true, so
 // the new question was silently parked and the panel stayed busy.
 {
-  let release: ((value: AssistantSuggestion) => void) | null = null;
+  const resolvers: Array<(value: AssistantSuggestion) => void> = [];
   const delivered: string[] = [];
   const cancelled: string[] = [];
   const skipReasons: string[] = [];
@@ -150,7 +151,7 @@ async function nextTurn() {
     {
       complete: () =>
         new Promise<AssistantSuggestion>((resolve) => {
-          release = resolve;
+          resolvers.push(resolve);
         }),
     },
     {
@@ -158,8 +159,7 @@ async function nextTurn() {
       onError: (message) => assert.fail(message),
       onCancelled: (reason) => cancelled.push(reason),
       onWakeSkipped: (_wake, reason) => skipReasons.push(reason),
-    },
-    200
+    }
   );
 
   cancelRuntime.wake(createSttSignalWake("a question", "test_signal"));
@@ -168,11 +168,11 @@ async function nextTurn() {
 
   assert.deepEqual(cancelled, ["user_cleared_conversation"], "cancel must notify the UI");
 
-  // Ask again while the first request is STILL pending. The abandoned promise
-  // is never resolved; whatever `release` points at now is the new one.
+  // Ask again while the first request is STILL pending: a parked request must
+  // not hold the runtime, so this runs immediately.
   cancelRuntime.wake(createSttSignalWake("a question after cancel", "test_signal"));
   await new Promise<void>((resolve) => setTimeout(resolve, 20));
-  release!(answer);
+  resolvers[1](answer);
   await new Promise<void>((resolve) => setTimeout(resolve, 20));
   assert.deepEqual(
     delivered,
@@ -180,9 +180,11 @@ async function nextTurn() {
     "the next question must run right after a cancel, without waiting for the abandoned request"
   );
 
-  // The abandoned request has now hit the watchdog; its late failure must not
-  // surface as an error for a conversation the user already left.
-  await new Promise<void>((resolve) => setTimeout(resolve, 260));
+  // Only now does the abandoned request settle. With the watchdog gone this is
+  // the case that still has to be swallowed, and it is the epoch/generation
+  // guard — not a clock — that keeps it out of the conversation the user left.
+  resolvers[0]({ answer: "stale answer", bullets: [], clarifyingQuestion: null });
+  await new Promise<void>((resolve) => setTimeout(resolve, 20));
   assert.deepEqual(delivered, ["coach answer"], "a stale result must never be delivered late");
   assert.ok(
     skipReasons.includes("cancelled"),

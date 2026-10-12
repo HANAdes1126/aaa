@@ -7,18 +7,18 @@ import type { WakeEvent } from "./wake";
 const AGENT_CONTEXT_WINDOW_MS = 120_000;
 const STT_WAKE_COOLDOWN_MS = 10_000;
 const RECENT_EVIDENCE_TTL_MS = 60_000;
-/// Last-resort watchdog for one coach run.
+/// No watchdog on a coach run — on purpose.
 ///
-/// The transport has its own per-request timeout, and Rust now caps every LLM
-/// call — but neither helps if a promise simply never settles (a prefetch
-/// promise parked in state, a transport that swallows a rejection). Without
-/// this, `inFlight` stays true forever, every later question is dropped as
-/// "already running", and the panel looks dead with no way to recover.
+/// There used to be a 100s one, to stop a promise that never settles from
+/// pinning `inFlight` forever. It was removed together with the transport's 85s
+/// cap, because any clock on this path also fires on runs that are merely long
+/// and for a reasoning model "long" is normal. Throwing away a good answer to
+/// guard against a hypothetical deadlock is the wrong trade.
 ///
-/// Must stay ABOVE the transport budget (85s), otherwise it fires first and the
-/// user gets this generic "watchdog" failure instead of the real reason. It is
-/// a deadlock breaker, not a latency policy.
-const AGENT_RUN_HARD_TIMEOUT_MS = 100_000;
+/// The recovery path for a genuinely stuck run is the user, not a timer:
+/// starting a new conversation calls `cancel()`, which releases `inFlight` on
+/// the spot and bumps the epoch, so the abandoned request can never be
+/// delivered however long it eventually takes to settle.
 
 export type AgentRuntimeCallbacks = {
   onDelta?: (delta: string, wake: WakeEvent) => void;
@@ -54,9 +54,7 @@ export class AgentRuntime {
   constructor(
     private context: ContextStore,
     private transport: AgentTransport,
-    callbacks: AgentRuntimeCallbacks,
-    /** Overridable so tests can exercise the watchdog without waiting 30s. */
-    private runTimeoutMs: number = AGENT_RUN_HARD_TIMEOUT_MS
+    callbacks: AgentRuntimeCallbacks
   ) {
     this.callbacks = callbacks;
   }
@@ -88,7 +86,7 @@ export class AgentRuntime {
    * ineligible for delivery, and the generation bump stops its `drain()` from
    * touching `inFlight` when it eventually settles. `inFlight` is released
    * *here*, not then, because "the user clicked away" must free the runtime
-   * immediately; waiting for a stalled request (up to `runTimeoutMs`) would
+   * immediately; waiting for a request that may never settle would
    * leave it busy long after the user moved on.
    */
   cancel(reason: string) {
@@ -155,26 +153,23 @@ export class AgentRuntime {
         try {
           const snapshot = this.context.snapshot(AGENT_CONTEXT_WINDOW_MS);
           const prompt = buildAgentPrompt(wake, snapshot);
-          const suggestion = await withHardTimeout(
-            this.transport.complete(prompt, {
-              onDelta: (delta) => {
-                if (epoch === this.interactionEpoch) this.callbacks.onDelta?.(delta, wake);
-              },
-              onRetry: (attempt, reason) => {
-                if (epoch === this.interactionEpoch) this.callbacks.onRetry?.(attempt, reason, wake);
-              },
-              onToolEnd: (name, isError) => {
-                if (epoch === this.interactionEpoch) this.callbacks.onToolEnd?.(name, isError, wake);
-              },
-              onToolStart: (name) => {
-                if (epoch === this.interactionEpoch) this.callbacks.onToolStart?.(name, wake);
-              },
-              onToolTrace: (trace) => {
-                if (epoch === this.interactionEpoch) this.callbacks.onToolTrace?.(trace, wake);
-              },
-            }),
-            this.runTimeoutMs
-          );
+          const suggestion = await this.transport.complete(prompt, {
+            onDelta: (delta) => {
+              if (epoch === this.interactionEpoch) this.callbacks.onDelta?.(delta, wake);
+            },
+            onRetry: (attempt, reason) => {
+              if (epoch === this.interactionEpoch) this.callbacks.onRetry?.(attempt, reason, wake);
+            },
+            onToolEnd: (name, isError) => {
+              if (epoch === this.interactionEpoch) this.callbacks.onToolEnd?.(name, isError, wake);
+            },
+            onToolStart: (name) => {
+              if (epoch === this.interactionEpoch) this.callbacks.onToolStart?.(name, wake);
+            },
+            onToolTrace: (trace) => {
+              if (epoch === this.interactionEpoch) this.callbacks.onToolTrace?.(trace, wake);
+            },
+          });
           if (generation !== this.drainGeneration) {
             this.callbacks.onWakeSkipped?.(wake, "cancelled");
             continue;
@@ -288,23 +283,4 @@ function isSimilarEvidence(left: string, right: string) {
     return true;
   }
   return false;
-}
-
-function withHardTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const guard = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () =>
-        reject(
-          new Error(
-            `本轮生成超过 ${Math.round(timeoutMs / 1000)} 秒仍未完成，已放弃；可以直接再问一次。`
-          )
-        ),
-      timeoutMs
-    );
-  });
-
-  return Promise.race([promise, guard]).finally(() => {
-    if (timer !== null) clearTimeout(timer);
-  });
 }
