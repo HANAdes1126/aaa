@@ -2,14 +2,44 @@ use super::audio_normalization::normalize_to_wav_16k_mono;
 use super::{AsrCapabilities, AsrExecutionMode, BatchAsrRequest, SttProvider};
 use crate::providers::config::ProviderId;
 use crate::providers::credentials::ResolvedCredentials;
-use crate::providers::error::{ProviderFailure, ProviderResult};
+use crate::providers::error::{ProviderFailure, ProviderFailureKind, ProviderResult};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use futures_util::StreamExt;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::time::Duration;
 
 const MAX_CHAT_AUDIO_DATA_URL_BYTES: usize = 10_000_000;
+
+/// Ceiling for one *silent* stretch of an STT round trip.
+///
+/// This is not a budget for a long task — it is how "the server is still
+/// working" is told apart from "the socket is dead". An STT request carries one
+/// VAD segment (15 seconds of audio at most) and a healthy reply lands in 1–2
+/// seconds, so 15 seconds of complete silence can only mean the connection is
+/// gone.
+///
+/// It has to exist because a server that accepts the request and then neither
+/// ends the SSE stream nor closes the socket leaves `stream.next()` pending
+/// forever. That task never reaches `finish`/`abandon`, so its `start_ms` stays
+/// in `TranscriptOrderGate::in_flight` and every later segment of the meeting is
+/// held behind it: the transcript stalls or arrives seconds late, and only
+/// restarting the session (which resets the gate) brings it back.
+const STT_IDLE_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Reports a stalled STT call through both channels that matter: the log (so the
+/// next occurrence is diagnosable) and the caller (so the segment is abandoned
+/// instead of pinning the order gate).
+fn stt_timeout(provider: ProviderId, message: String) -> ProviderFailure {
+    let _ = crate::debug_log::append(&format!("[stt] {message}"));
+    ProviderFailure::new(
+        provider,
+        ProviderFailureKind::Timeout,
+        true,
+        message,
+    )
+}
 
 pub struct OpenAiCompatibleStt {
     base_url: String,
@@ -67,19 +97,34 @@ impl OpenAiCompatibleStt {
             }],
             "stream": true,
         });
-        let response = self
-            .client
-            .post(&self.base_url)
-            .bearer_auth(&self.api_key)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|error| ProviderFailure::transport(self.id(), error))?;
+        let response = tokio::time::timeout(
+            STT_IDLE_TIMEOUT,
+            self.client
+                .post(&self.base_url)
+                .bearer_auth(&self.api_key)
+                .json(&body)
+                .send(),
+        )
+        .await
+        .map_err(|_| {
+            stt_timeout(
+                self.id(),
+                format!(
+                    "chat-audio request got no response in {}s.",
+                    STT_IDLE_TIMEOUT.as_secs()
+                ),
+            )
+        })?
+        .map_err(|error| ProviderFailure::transport(self.id(), error))?;
         let status = response.status();
         if !status.is_success() {
             let error_body = response.text().await.unwrap_or_default();
+            // The body carries the only explanation the endpoint gives
+            // (`InternalError.Algo.InvalidParameter: ...` and friends). Logging
+            // just the status made every 400 here impossible to diagnose.
             let _ = crate::debug_log::append(&format!(
-                "[stt] chat-audio streaming retry rejected status={status}",
+                "[stt] chat-audio streaming retry rejected status={status} body={}",
+                response_preview(&error_body, 300)
             ));
             return Err(ProviderFailure::http(self.id(), status, &error_body));
         }
@@ -87,9 +132,31 @@ impl OpenAiCompatibleStt {
         let _ = crate::debug_log::append("[stt] chat-audio streaming retry accepted");
         let mut stream = response.bytes_stream();
         let mut payload = String::new();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|error| ProviderFailure::transport(self.id(), error))?;
-            payload.push_str(&String::from_utf8_lossy(&chunk));
+        loop {
+            // Each wait is capped separately: a stream that opened and then went
+            // silent looks exactly like a slow model to a bare `.await`.
+            match tokio::time::timeout(STT_IDLE_TIMEOUT, stream.next()).await {
+                Ok(Some(chunk)) => {
+                    let chunk =
+                        chunk.map_err(|error| ProviderFailure::transport(self.id(), error))?;
+                    payload.push_str(&String::from_utf8_lossy(&chunk));
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    let _ = crate::debug_log::append(&format!(
+                        "[stt] chat-audio stream stalled bytes={} idle_s={}",
+                        payload.len(),
+                        STT_IDLE_TIMEOUT.as_secs()
+                    ));
+                    return Err(stt_timeout(
+                        self.id(),
+                        format!(
+                            "chat-audio stream had no data for {}s.",
+                            STT_IDLE_TIMEOUT.as_secs()
+                        ),
+                    ));
+                }
+            }
         }
         match parse_sse_transcript(&payload) {
             Ok(transcript) => Ok(transcript),
@@ -146,14 +213,25 @@ impl SttProvider for OpenAiCompatibleStt {
             .text("model", self.model.clone())
             .part("file", part);
 
-        let response = self
-            .client
-            .post(&self.base_url)
-            .bearer_auth(&self.api_key)
-            .multipart(form)
-            .send()
-            .await
-            .map_err(|error| ProviderFailure::transport(self.id(), error))?;
+        let response = tokio::time::timeout(
+            STT_IDLE_TIMEOUT,
+            self.client
+                .post(&self.base_url)
+                .bearer_auth(&self.api_key)
+                .multipart(form)
+                .send(),
+        )
+        .await
+        .map_err(|_| {
+            stt_timeout(
+                self.id(),
+                format!(
+                    "multipart request got no response in {}s.",
+                    STT_IDLE_TIMEOUT.as_secs()
+                ),
+            )
+        })?
+        .map_err(|error| ProviderFailure::transport(self.id(), error))?;
 
         let status = response.status();
         if !status.is_success() {
@@ -176,9 +254,17 @@ impl SttProvider for OpenAiCompatibleStt {
             return Err(ProviderFailure::http(self.id(), status, &body));
         }
 
-        let parsed: SttResponse = response
-            .json()
+        let parsed: SttResponse = tokio::time::timeout(STT_IDLE_TIMEOUT, response.json())
             .await
+            .map_err(|_| {
+                stt_timeout(
+                    self.id(),
+                    format!(
+                        "multipart body had no data for {}s.",
+                        STT_IDLE_TIMEOUT.as_secs()
+                    ),
+                )
+            })?
             .map_err(|error| ProviderFailure::invalid_response(self.id(), error.to_string()))?;
         Ok(parsed.text)
     }

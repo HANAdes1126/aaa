@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { isTauriRuntime } from "./platform";
 import type {
@@ -23,6 +23,21 @@ export function useTauriEvents(
   session: SessionActions,
   agent: AgentRuntimeActions
 ) {
+  // `useMeetlyState` hands back a freshly built object on every render, and
+  // `audio_level_changed` re-renders this tree dozens of times a second while a
+  // meeting is running. Naming `ctx` (or `autoAssist` / `session` / `agent`) as
+  // an effect dependency therefore tore every listener down and re-registered
+  // it on each render — and `listen()` only finishes registering asynchronously.
+  // Any event that landed inside that gap was dropped, which is why an utterance
+  // sometimes produced no transcript at all and saying the exact same thing
+  // again worked: the second attempt happened to miss the gap.
+  //
+  // So the listeners below register exactly once and read the current values
+  // through this ref. Keep the dependency arrays empty; putting a render-scoped
+  // object back in reopens the hole.
+  const latest = useRef({ ctx, autoAssist, session, agent });
+  latest.current = { ctx, autoAssist, session, agent };
+
   useEffect(() => {
     if (!isTauriRuntime()) return;
 
@@ -30,7 +45,7 @@ export function useTauriEvents(
     let unlisten: (() => void) | undefined;
 
     void listen<boolean>("island_visibility_changed", (event) => {
-      if (!disposed) ctx.setIsHidden(!event.payload);
+      if (!disposed) latest.current.ctx.setIsHidden(!event.payload);
     }).then((nextUnlisten) => {
       if (disposed) nextUnlisten();
       else unlisten = nextUnlisten;
@@ -40,7 +55,7 @@ export function useTauriEvents(
       disposed = true;
       unlisten?.();
     };
-  }, [ctx]);
+  }, []);
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -53,7 +68,7 @@ export function useTauriEvents(
       if (disposed) return;
       const source = event.payload.source ?? "system";
       levels[source] = event.payload.level;
-      ctx.setAudioLevel(Math.max(levels.system, levels.microphone));
+      latest.current.ctx.setAudioLevel(Math.max(levels.system, levels.microphone));
     }).then((nextUnlisten) => {
       if (disposed) nextUnlisten();
       else unlisten = nextUnlisten;
@@ -63,7 +78,7 @@ export function useTauriEvents(
       disposed = true;
       unlisten?.();
     };
-  }, [ctx]);
+  }, []);
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -76,6 +91,7 @@ export function useTauriEvents(
 
     void listen<TranscriptSegment>("transcript_final", (event) => {
       if (disposed) return;
+      const { ctx, autoAssist } = latest.current;
       ctx.setPendingTranscriptCount((current) => Math.max(0, current - 1));
       ctx.setPartialTranscript(null);
       autoAssist.addTranscriptSegment(event.payload);
@@ -86,7 +102,7 @@ export function useTauriEvents(
 
     void listen<PartialTranscript>("transcript_partial", (event) => {
       if (disposed) return;
-      ctx.setPartialTranscript(event.payload);
+      latest.current.ctx.setPartialTranscript(event.payload);
     }).then((nextUnlisten) => {
       if (disposed) nextUnlisten();
       else unlistenPartial = nextUnlisten;
@@ -94,6 +110,7 @@ export function useTauriEvents(
 
     void listen<TranscriptError>("transcript_error", (event) => {
       if (disposed) return;
+      const { ctx } = latest.current;
       ctx.setPendingTranscriptCount((current) => Math.max(0, current - 1));
       ctx.setPartialTranscript(null);
       ctx.setTranscriptError(event.payload.message);
@@ -104,7 +121,7 @@ export function useTauriEvents(
 
     void listen<string>("transcript_started", () => {
       if (disposed) return;
-      ctx.setPendingTranscriptCount((current) => current + 1);
+      latest.current.ctx.setPendingTranscriptCount((current) => current + 1);
     }).then((nextUnlisten) => {
       if (disposed) nextUnlisten();
       else unlistenStarted = nextUnlisten;
@@ -117,7 +134,7 @@ export function useTauriEvents(
       unlistenStarted?.();
       unlistenPartial?.();
     };
-  }, [autoAssist, ctx]);
+  }, []);
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -127,6 +144,7 @@ export function useTauriEvents(
 
     void listen<AgentToolTraceEvent>("agent_tool_trace", (event) => {
       if (disposed) return;
+      const { ctx } = latest.current;
       const payload = event.payload;
       const trace: CoachToolTrace = {
         id: payload.traceId,
@@ -171,7 +189,7 @@ export function useTauriEvents(
       disposed = true;
       unlisten?.();
     };
-  }, [ctx]);
+  }, []);
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -182,7 +200,7 @@ export function useTauriEvents(
     let unlistenError: (() => void) | undefined;
 
     void listen<AssistantDeltaPayload>("assistant_delta", (event) => {
-      if (!disposed) ctx.setAssistantDraft((current) => current + event.payload.text);
+      if (!disposed) latest.current.ctx.setAssistantDraft((current) => current + event.payload.text);
     }).then((nextUnlisten) => {
       if (disposed) nextUnlisten();
       else unlistenDelta = nextUnlisten;
@@ -190,6 +208,7 @@ export function useTauriEvents(
 
     void listen<AssistantSuggestion>("assistant_done", (event) => {
       if (disposed) return;
+      const { ctx, agent, session } = latest.current;
       ctx.setAssistantSuggestion(event.payload);
       ctx.setAssistantDraft("");
       ctx.setAssistantError(null);
@@ -213,6 +232,7 @@ export function useTauriEvents(
 
     void listen<AssistantErrorPayload>("assistant_error", (event) => {
       if (disposed) return;
+      const { ctx, agent, session } = latest.current;
       ctx.setAssistantError(event.payload.message);
       ctx.setAssistantDraft("");
       ctx.setIsAsking(false);
@@ -237,7 +257,7 @@ export function useTauriEvents(
       unlistenDone?.();
       unlistenError?.();
     };
-  }, [agent, ctx, session]);
+  }, []);
 }
 
 function upsertToolTrace(current: CoachToolTrace[], trace: CoachToolTrace) {
