@@ -28,6 +28,26 @@ const MAX_CHAT_AUDIO_DATA_URL_BYTES: usize = 10_000_000;
 /// restarting the session (which resets the gate) brings it back.
 const STT_IDLE_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// How long the Whisper-style multipart upload may stay silent before the
+/// endpoint is taken to have no multipart endpoint at all.
+///
+/// Deliberately short, and unrelated to `STT_IDLE_TIMEOUT`: this upload is a
+/// probe, and a wrong guess here only costs a hand-off to chat-audio. On the
+/// one endpoint measured against it, the probe used to come back with a 400 in
+/// ~230ms, so 4s is ~17x margin for a rejection. Waiting the full idle ceiling
+/// (15s, what 0.1.11 did) turned a probe into the slowest part of the segment:
+/// the first transcript after launch sat out the whole budget before the real
+/// request was even sent.
+const STT_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
+
+/// Ceiling for the multipart upload *after* chat-audio has already failed.
+///
+/// At that point multipart is the only remaining path, so the wait is sized for
+/// real work rather than for a probe: a 15s clip on a hosted Whisper endpoint
+/// answers in a few seconds, and the response headers only arrive once the
+/// transcription is done.
+const STT_MULTIPART_RETRY_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Reports a stalled STT call through both channels that matter: the log (so the
 /// next occurrence is diagnosable) and the caller (so the segment is abandoned
 /// instead of pinning the order gate).
@@ -47,22 +67,53 @@ fn stt_timeout(provider: ProviderId, message: String) -> ProviderFailure {
 /// Every segment used to pay for that discovery: measured 2026-11-18 across a
 /// long log, the probe was rejected 1518 times against 1549 successes, i.e. ~98%
 /// of calls wasted an upload. On a gateway that answers the probe with a body
-/// rejection that cost ~230ms; on one that simply never answers it costs the
-/// full idle ceiling, which is 15s of a user waiting for text that was ready.
+/// rejection that cost ~230ms; on one that never answers it costs the whole
+/// probe ceiling, in front of every single segment.
 ///
-/// Remembering the verdict makes it one cost per endpoint per app run, and
-/// keeps the working path (chat-audio) as the only path after that. In-memory
-/// only, like the LLM's `non_stream_known_unsupported`: an endpoint that gains
-/// multipart support recovers on the next launch without clearing a cache file.
+/// Remembering the verdict keeps the working path (chat-audio) as the only path
+/// after the first segment ever, so the probe is not re-paid on every launch.
+///
+/// Persisted, not just in-memory like the LLM's `non_stream_known_unsupported`:
+/// that cache is rebuilt from a cheap 400, whereas rebuilding this one costs the
+/// user a visible pause in front of their first sentence after every restart.
+///
+/// A stale verdict cannot strand anyone: if chat-audio ever fails, the upload is
+/// retried with its full budget before the segment is given up.
 static MULTIPART_UNSUPPORTED: std::sync::LazyLock<
     std::sync::RwLock<std::collections::HashSet<String>>,
 > = std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashSet::new()));
+
+/// Seeds `MULTIPART_UNSUPPORTED` from disk the first time it is consulted.
+static MULTIPART_VERDICTS_LOADED: std::sync::LazyLock<()> = std::sync::LazyLock::new(|| {
+    let Some(path) = multipart_verdict_path() else {
+        return;
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    if let Ok(mut set) = MULTIPART_UNSUPPORTED.write() {
+        for line in text.lines() {
+            let line = line.trim();
+            if !line.is_empty() {
+                set.insert(line.to_string());
+            }
+        }
+    }
+});
+
+fn multipart_verdict_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|home| {
+        home.join(".meetly")
+            .join("stt-multipart-unsupported.txt")
+    })
+}
 
 fn multipart_key(base_url: &str, model: &str) -> String {
     format!("{base_url}|{model}")
 }
 
 fn multipart_known_unsupported(key: &str) -> bool {
+    std::sync::LazyLock::force(&MULTIPART_VERDICTS_LOADED);
     MULTIPART_UNSUPPORTED
         .read()
         .map(|set| set.contains(key))
@@ -70,9 +121,47 @@ fn multipart_known_unsupported(key: &str) -> bool {
 }
 
 fn remember_multipart_unsupported(key: &str) {
+    let already = MULTIPART_UNSUPPORTED
+        .read()
+        .map(|set| set.contains(key))
+        .unwrap_or(true);
     if let Ok(mut set) = MULTIPART_UNSUPPORTED.write() {
         set.insert(key.to_string());
     }
+    if already {
+        return;
+    }
+    // Best effort: a read-only home directory only costs a repeated probe.
+    let Some(path) = multipart_verdict_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        use std::io::Write as _;
+        let _ = writeln!(file, "{key}");
+    }
+}
+
+/// What one attempt at the Whisper-style upload produced.
+///
+/// The distinction that matters is *"try the other path"* versus *"this will
+/// never work on this endpoint"*: an auth error or a 5xx is not a hint about
+/// the payload format, so retrying it over chat-audio would only bury the real
+/// message.
+enum MultipartAttempt {
+    Transcript(String),
+    /// The endpoint has no usable multipart path. `retry_later` is true when it
+    /// went silent rather than rejecting, i.e. the upload might still have
+    /// worked if given longer -- worth one slow retry if chat-audio fails too.
+    FallBack { retry_later: bool },
+    /// Do not retry: the failure is about the credentials or the server.
+    Fatal(ProviderFailure),
 }
 
 pub struct OpenAiCompatibleStt {
@@ -212,6 +301,91 @@ impl OpenAiCompatibleStt {
             }
         }
     }
+
+    /// One attempt at the plain Whisper-style upload, capped at `ceiling`.
+    async fn multipart_once(
+        &self,
+        request: &BatchAsrRequest,
+        ceiling: Duration,
+    ) -> MultipartAttempt {
+        let part = match reqwest::multipart::Part::bytes(request.audio_bytes.clone())
+            .file_name(request.filename.clone())
+            .mime_str(&request.mime_type)
+        {
+            Ok(part) => part,
+            Err(error) => {
+                return MultipartAttempt::Fatal(ProviderFailure::invalid_request(
+                    self.id(),
+                    error.to_string(),
+                ))
+            }
+        };
+        let form = reqwest::multipart::Form::new()
+            .text("model", self.model.clone())
+            .part("file", part);
+
+        let response = match tokio::time::timeout(
+            ceiling,
+            self.client
+                .post(&self.base_url)
+                .bearer_auth(&self.api_key)
+                .multipart(form)
+                .send(),
+        )
+        .await
+        {
+            Ok(Ok(response)) => response,
+            Ok(Err(error)) => {
+                return MultipartAttempt::Fatal(ProviderFailure::transport(self.id(), error))
+            }
+            Err(_) => {
+                // Silence is handled exactly like a refusal: hand the segment to
+                // chat-audio instead of spending the whole segment budget, and
+                // let the caller retry the upload only if chat-audio also fails.
+                let _ = crate::debug_log::append(&format!(
+                    "[stt] multipart got no response in {}s; using chat-audio",
+                    ceiling.as_secs()
+                ));
+                return MultipartAttempt::FallBack { retry_later: true };
+            }
+        };
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            // Two known families of chat-only ASR endpoints reject the Whisper
+            // multipart upload: Tencent Copilot (code 11101, streaming-only)
+            // and Bailian's compatible-mode, which has no multipart endpoint
+            // at all ("Required body invalid, please check the request body
+            // format"). Both speak the OpenAI audio-in-chat payload; auth and
+            // quota errors are left untouched.
+            if requires_chat_audio_streaming_retry(status, &body) {
+                let _ = crate::debug_log::append(&format!(
+                    "[stt] multipart rejected status={status}; retrying chat-audio stream",
+                ));
+                return MultipartAttempt::FallBack { retry_later: false };
+            }
+            let _ = crate::debug_log::append(&format!(
+                "[stt] non-stream request rejected status={status}; no streaming retry",
+            ));
+            return MultipartAttempt::Fatal(ProviderFailure::http(self.id(), status, &body));
+        }
+
+        match tokio::time::timeout(STT_IDLE_TIMEOUT, response.json::<SttResponse>()).await {
+            Ok(Ok(parsed)) => MultipartAttempt::Transcript(parsed.text),
+            Ok(Err(error)) => MultipartAttempt::Fatal(ProviderFailure::invalid_response(
+                self.id(),
+                error.to_string(),
+            )),
+            Err(_) => MultipartAttempt::Fatal(stt_timeout(
+                self.id(),
+                format!(
+                    "multipart body had no data for {}s.",
+                    STT_IDLE_TIMEOUT.as_secs()
+                ),
+            )),
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -230,9 +404,8 @@ impl SttProvider for OpenAiCompatibleStt {
     }
 
     async fn transcribe(&self, request: BatchAsrRequest) -> ProviderResult<String> {
-        // Preserve the original request only for the narrowly-scoped Copilot
-        // fallback below. Normal Whisper-compatible ASR providers retain their
-        // existing multipart request and response contract.
+        // The request survives for the fallback because the two paths need the
+        // same audio twice.
         let fallback_request = BatchAsrRequest {
             audio_bytes: request.audio_bytes.clone(),
             filename: request.filename.clone(),
@@ -240,89 +413,56 @@ impl SttProvider for OpenAiCompatibleStt {
         };
 
         let key = multipart_key(&self.base_url, &self.model);
+        // True only while chat-audio is still unproven *and* the upload went
+        // silent rather than refusing: the one case where the slow upload is
+        // worth a second attempt.
+        let mut may_retry_upload = false;
+
         if multipart_known_unsupported(&key) {
-            // Already established on this run: the endpoint has no multipart
-            // endpoint. Probing again would just repeat the rejection.
+            // Decided on this run already. Probing again would just repeat it.
             let _ = crate::debug_log::append(
                 "[stt] multipart skipped (endpoint answered it before); using chat-audio",
             );
-            return self.transcribe_via_streaming_chat(fallback_request).await;
+        } else {
+            match self.multipart_once(&fallback_request, STT_PROBE_TIMEOUT).await {
+                MultipartAttempt::Transcript(text) => return Ok(text),
+                MultipartAttempt::Fatal(error) => return Err(error),
+                MultipartAttempt::FallBack { retry_later } => {
+                    may_retry_upload = retry_later;
+                    remember_multipart_unsupported(&key);
+                }
+            }
         }
 
-        let part = reqwest::multipart::Part::bytes(request.audio_bytes)
-            .file_name(request.filename)
-            .mime_str(&request.mime_type)
-            .map_err(|error| ProviderFailure::invalid_request(self.id(), error.to_string()))?;
-
-        let form = reqwest::multipart::Form::new()
-            .text("model", self.model.clone())
-            .part("file", part);
-
-        let response = match tokio::time::timeout(
-            STT_IDLE_TIMEOUT,
-            self.client
-                .post(&self.base_url)
-                .bearer_auth(&self.api_key)
-                .multipart(form)
-                .send(),
-        )
-        .await
-        {
-            Ok(result) => {
-                result.map_err(|error| ProviderFailure::transport(self.id(), error))?
-            }
-            Err(_) => {
-                // No answer at all is a rejection too, and it is the worst
-                // kind: the whole segment's budget is spent waiting. Treat it
-                // as "this endpoint does not take multipart" and fall through
-                // to the path that works. Returning the timeout here (which is
-                // what 0.1.11 did) threw away every segment: the retry branch
-                // below is only reachable for an HTTP status, so nothing ever
-                // reached chat-audio.
-                remember_multipart_unsupported(&key);
-                let _ = crate::debug_log::append(&format!(
-                    "[stt] multipart got no response in {}s; endpoint treated as chat-audio only, retrying chat-audio stream",
-                    STT_IDLE_TIMEOUT.as_secs()
-                ));
-                return self.transcribe_via_streaming_chat(fallback_request).await;
-            }
-        };
-
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            // Two known families of chat-only ASR endpoints reject the Whisper
-            // multipart upload: Tencent Copilot (code 11101, streaming-only)
-            // and Bailian's compatible-mode, which has no multipart endpoint
-            // at all ("Required body invalid, please check the request body
-            // format"). Both speak the OpenAI audio-in-chat payload, so retry
-            // once with that; auth and quota errors are left untouched.
-            if requires_chat_audio_streaming_retry(status, &body) {
-                remember_multipart_unsupported(&key);
-                let _ = crate::debug_log::append(&format!(
-                    "[stt] multipart rejected status={status}; retrying chat-audio stream",
-                ));
-                return self.transcribe_via_streaming_chat(fallback_request).await;
-            }
-            let _ = crate::debug_log::append(&format!(
-                "[stt] non-stream request rejected status={status}; no streaming retry",
-            ));
-            return Err(ProviderFailure::http(self.id(), status, &body));
-        }
-
-        let parsed: SttResponse = tokio::time::timeout(STT_IDLE_TIMEOUT, response.json())
+        match self
+            .transcribe_via_streaming_chat(BatchAsrRequest {
+                audio_bytes: fallback_request.audio_bytes.clone(),
+                filename: fallback_request.filename.clone(),
+                mime_type: fallback_request.mime_type.clone(),
+            })
             .await
-            .map_err(|_| {
-                stt_timeout(
-                    self.id(),
-                    format!(
-                        "multipart body had no data for {}s.",
-                        STT_IDLE_TIMEOUT.as_secs()
-                    ),
-                )
-            })?
-            .map_err(|error| ProviderFailure::invalid_response(self.id(), error.to_string()))?;
-        Ok(parsed.text)
+        {
+            Ok(text) => Ok(text),
+            // chat-audio failed too, on an endpoint that only went *silent* on
+            // the upload. The upload may simply have been slower than a probe
+            // is allowed to wait, so give it the real budget rather than
+            // dropping the segment. This mirrors the pre-0.1.11 behaviour of
+            // waiting for the upload instead of treating it as an error.
+            Err(chat_error) if may_retry_upload => {
+                let _ = crate::debug_log::append(
+                    "[stt] chat-audio failed; retrying multipart upload with the full budget",
+                );
+                match self
+                    .multipart_once(&fallback_request, STT_MULTIPART_RETRY_TIMEOUT)
+                    .await
+                {
+                    MultipartAttempt::Transcript(text) => Ok(text),
+                    MultipartAttempt::Fatal(error) => Err(error),
+                    MultipartAttempt::FallBack { .. } => Err(chat_error),
+                }
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 
