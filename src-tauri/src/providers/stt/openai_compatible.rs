@@ -41,6 +41,40 @@ fn stt_timeout(provider: ProviderId, message: String) -> ProviderFailure {
     )
 }
 
+/// Endpoints that already told us they cannot take a Whisper-style multipart
+/// upload, keyed by `base_url|model`.
+///
+/// Every segment used to pay for that discovery: measured 2026-11-18 across a
+/// long log, the probe was rejected 1518 times against 1549 successes, i.e. ~98%
+/// of calls wasted an upload. On a gateway that answers the probe with a body
+/// rejection that cost ~230ms; on one that simply never answers it costs the
+/// full idle ceiling, which is 15s of a user waiting for text that was ready.
+///
+/// Remembering the verdict makes it one cost per endpoint per app run, and
+/// keeps the working path (chat-audio) as the only path after that. In-memory
+/// only, like the LLM's `non_stream_known_unsupported`: an endpoint that gains
+/// multipart support recovers on the next launch without clearing a cache file.
+static MULTIPART_UNSUPPORTED: std::sync::LazyLock<
+    std::sync::RwLock<std::collections::HashSet<String>>,
+> = std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashSet::new()));
+
+fn multipart_key(base_url: &str, model: &str) -> String {
+    format!("{base_url}|{model}")
+}
+
+fn multipart_known_unsupported(key: &str) -> bool {
+    MULTIPART_UNSUPPORTED
+        .read()
+        .map(|set| set.contains(key))
+        .unwrap_or(false)
+}
+
+fn remember_multipart_unsupported(key: &str) {
+    if let Ok(mut set) = MULTIPART_UNSUPPORTED.write() {
+        set.insert(key.to_string());
+    }
+}
+
 pub struct OpenAiCompatibleStt {
     base_url: String,
     model: String,
@@ -204,6 +238,17 @@ impl SttProvider for OpenAiCompatibleStt {
             filename: request.filename.clone(),
             mime_type: request.mime_type.clone(),
         };
+
+        let key = multipart_key(&self.base_url, &self.model);
+        if multipart_known_unsupported(&key) {
+            // Already established on this run: the endpoint has no multipart
+            // endpoint. Probing again would just repeat the rejection.
+            let _ = crate::debug_log::append(
+                "[stt] multipart skipped (endpoint answered it before); using chat-audio",
+            );
+            return self.transcribe_via_streaming_chat(fallback_request).await;
+        }
+
         let part = reqwest::multipart::Part::bytes(request.audio_bytes)
             .file_name(request.filename)
             .mime_str(&request.mime_type)
@@ -213,7 +258,7 @@ impl SttProvider for OpenAiCompatibleStt {
             .text("model", self.model.clone())
             .part("file", part);
 
-        let response = tokio::time::timeout(
+        let response = match tokio::time::timeout(
             STT_IDLE_TIMEOUT,
             self.client
                 .post(&self.base_url)
@@ -222,16 +267,26 @@ impl SttProvider for OpenAiCompatibleStt {
                 .send(),
         )
         .await
-        .map_err(|_| {
-            stt_timeout(
-                self.id(),
-                format!(
-                    "multipart request got no response in {}s.",
+        {
+            Ok(result) => {
+                result.map_err(|error| ProviderFailure::transport(self.id(), error))?
+            }
+            Err(_) => {
+                // No answer at all is a rejection too, and it is the worst
+                // kind: the whole segment's budget is spent waiting. Treat it
+                // as "this endpoint does not take multipart" and fall through
+                // to the path that works. Returning the timeout here (which is
+                // what 0.1.11 did) threw away every segment: the retry branch
+                // below is only reachable for an HTTP status, so nothing ever
+                // reached chat-audio.
+                remember_multipart_unsupported(&key);
+                let _ = crate::debug_log::append(&format!(
+                    "[stt] multipart got no response in {}s; endpoint treated as chat-audio only, retrying chat-audio stream",
                     STT_IDLE_TIMEOUT.as_secs()
-                ),
-            )
-        })?
-        .map_err(|error| ProviderFailure::transport(self.id(), error))?;
+                ));
+                return self.transcribe_via_streaming_chat(fallback_request).await;
+            }
+        };
 
         let status = response.status();
         if !status.is_success() {
@@ -243,6 +298,7 @@ impl SttProvider for OpenAiCompatibleStt {
             // format"). Both speak the OpenAI audio-in-chat payload, so retry
             // once with that; auth and quota errors are left untouched.
             if requires_chat_audio_streaming_retry(status, &body) {
+                remember_multipart_unsupported(&key);
                 let _ = crate::debug_log::append(&format!(
                     "[stt] multipart rejected status={status}; retrying chat-audio stream",
                 ));
